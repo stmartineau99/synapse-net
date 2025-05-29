@@ -50,10 +50,10 @@ def _postprocess(data, apply_cc, min_component_size, iterations=0):
 
 def _single_az_evaluation(seg, gt, apply_cc, min_component_size, iterations, criterion):
     assert seg.shape == gt.shape, f"{seg.shape}, {gt.shape}"
+    dice = dice_score(seg > 0, gt > 0)
+
     seg = _postprocess(seg, apply_cc, min_component_size, iterations=iterations)
     gt = _postprocess(gt, apply_cc, min_component_size=500)
-
-    dice = dice_score(seg > 0, gt > 0)
 
     n_true, n_matched, n_pred, scores = _compute_scores(seg, gt, criterion=criterion, ignore_label=0)
     tp = _compute_tps(scores, n_matched, threshold=0.5)
@@ -73,9 +73,13 @@ def az_evaluation(
     min_component_size: int = 5000,
     iterations: int = 3,
     criterion: str = "iou",
+    threshold: Optional[float] = None,
     **extra_cols
 ) -> pd.DataFrame:
     """Evaluate active zone segmentations against ground-truth annotations.
+
+    This computes the dice score as well as false positives, false negatives and true positives
+    for each segmented tomogram.
 
     Args:
         seg_paths: The filepaths to the segmentations, stored as hd5 files.
@@ -84,9 +88,11 @@ def az_evaluation(
         gt_key: The internal path to the data in the ground-truth hdf5 file.
         crop: Whether to crop the segmentation and ground-truth to the bounding box.
         apply_cc: Whether to apply connected components before evaluation.
-        min_component_size: Minimum component size for filtering the segmentation and annotations before evaluation.
-        iterations: Post-processing iterations for expanding the AZ.
-        criterion:
+        min_component_size: Minimum component size for filtering the segmentation before evaluation.
+        iterations: Post-processing iterations for expanding the AZ annotations.
+        criterion: The criterion for matching annotations and segmentations
+        threshold: Threshold applied to the segmentation. This is required if the segmentation is passed as
+        probability prediction instead of a binary segmentation. Possible values: 'iou', 'iop', 'iot'.
         extra_cols: Additional columns for the result table.
 
     Returns:
@@ -110,10 +116,13 @@ def az_evaluation(
                 print("Segmentation", seg_key, "could not be found in", seg_path)
                 i += 1
                 continue
-            seg = f[seg_key][:]
+            seg = f[seg_key][:].squeeze()
 
         with h5py.File(gt_path, "r") as f:
             gt = f[gt_key][:]
+
+        if threshold is not None:
+            seg = seg > threshold
 
         if crop:
             seg, gt = _crop(seg, gt)
@@ -163,18 +172,25 @@ def thin_az(
     boundary_map: np.typing.ArrayLike,
     vesicles: np.typing.ArrayLike,
     tomo: Optional[np.typing.ArrayLike] = None,
+    presyn_dist: int = 6,
     min_thinning_size: int = 2500,
     post_closing: int = 2,
-    presyn_dist: int = 6,
     check: bool = False,
 ) -> np.ndarray:
-    """
+    """Thin the active zone annotations by restricting them to a certain distance from the presynaptic mask.
 
     Args:
-        az_segmentation:
-        boundary_map:
-        vesicles:
-        min_thinning_size:
+        az_segmentation: The active zone annotations.
+        boundary_map: The boundary / membrane predictions.
+        vesicles: The vesicle segmentation.
+        tomo: The tomogram data. Optional, will only be used for evaluation.
+        presyn_dist: The maximal distance to the presynaptic compartment, which is used for thinning.
+        min_thinning_size: The minimal size for a label component.
+        post_closing: Closing iterations to apply to the AZ annotations after thinning.
+        check: Whether to visually check the results.
+
+    Returns:
+        The thinned AZ annotations.
     """
     az_segmentation = label(az_segmentation)
     thinned_az = np.zeros(az_segmentation.shape, dtype="uint8")

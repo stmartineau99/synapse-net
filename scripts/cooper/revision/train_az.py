@@ -7,7 +7,7 @@ import torch_em
 
 from sklearn.model_selection import train_test_split
 
-from synapse_net.training import supervised_training
+from synapse_net.training import supervised_training, AZDistanceLabelTransform
 
 TRAIN_ROOT = "/mnt/ceph-hdd/cold_store/projects/nim00007/new_AZ_train_data"
 OUTPUT_ROOT = "./models_az_thin"
@@ -83,8 +83,7 @@ def get_paths(split, datasets, testset=True):
     return paths
 
 
-# TODO: commit, then train with distance.
-def train(key, ignore_label=None, training_2D=False, testset=True, check=False):
+def train(key, ignore_label=None, use_distances=False, training_2D=False, testset=True, check=False):
 
     os.makedirs(OUTPUT_ROOT, exist_ok=True)
 
@@ -98,12 +97,19 @@ def train(key, ignore_label=None, training_2D=False, testset=True, check=False):
 
     # patch_shape = [48, 256, 256]
     patch_shape = [48, 384, 384]
-    model_name = "v4"
+    model_name = "v6"
 
     # checking for 2D training
     if training_2D:
         patch_shape = [1, 256, 256]
         model_name = "2D-AZ-model-v1"
+
+    if use_distances:
+        out_channels = 2
+        label_transform = AZDistanceLabelTransform()
+    else:
+        out_channels = 1
+        label_transform = torch_em.transform.label.labels_to_binary
 
     batch_size = 2
     supervised_training(
@@ -112,14 +118,14 @@ def train(key, ignore_label=None, training_2D=False, testset=True, check=False):
         val_paths=val_paths,
         label_key=f"/labels/{key}",
         patch_shape=patch_shape, batch_size=batch_size,
-        sampler=torch_em.data.sampler.MinInstanceSampler(min_num_instances=1, p_reject=0.9),
-        n_samples_train=None, n_samples_val=64,
+        sampler=torch_em.data.sampler.MinInstanceSampler(min_num_instances=1, p_reject=0.85),
+        n_samples_train=None, n_samples_val=100,
         check=check,
         save_root=OUTPUT_ROOT,
-        n_iterations=int(1.5e5),
+        n_iterations=int(2e5),
         ignore_label=ignore_label,
-        label_transform=torch_em.transform.label.labels_to_binary,
-        out_channels=1,
+        label_transform=label_transform,
+        out_channels=out_channels,
         # BCE_loss=False,
         # sigmoid_layer=True,
     )
@@ -127,14 +133,14 @@ def train(key, ignore_label=None, training_2D=False, testset=True, check=False):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-k", "--key", help="Key ID that will be used by model in training", default="az_thin")
+    parser.add_argument("-k", "--key", help="Key ID that will be used by model in training", default="az_merged")
     parser.add_argument("-m", "--mask", type=int, default=None,
                         help="Mask ID that will be ignored by model in training")
     parser.add_argument("-2D", "--training_2D", action='store_true', help="Set to True for 2D training")
     parser.add_argument("-t", "--testset", action='store_false', help="Set to False if no testset should be created")
     parser.add_argument("-c", "--check", action="store_true")
     args = parser.parse_args()
-    train(args.key, args.mask, args.training_2D, args.testset, args.check)
+    train(args.key, ignore_label=args.mask, training_2D=args.training_2D, testset=args.testset, check=args.check)
 
 
 if __name__ == "__main__":

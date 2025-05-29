@@ -6,6 +6,7 @@ parser.add_argument("result_path")
 args = parser.parse_args()
 
 results = pd.read_excel(args.result_path)
+print(results)
 
 
 def summarize_results(res):
@@ -20,29 +21,29 @@ def summarize_results(res):
 
 
 # # Compute the results for Chemical Fixation.
-results_chem_fix = results[results.dataset.str.startswith("12")]
+results_chem_fix = results[results.dataset == "chemical_fixation"]
 if results_chem_fix.size > 0:
     print("Chemical Fixation Results:")
     summarize_results(results_chem_fix)
 #
 # # Compute the results for STEM (=04).
-results_stem = results[results.dataset.str.startswith(("04", "06"))]
+results_stem = results[results.dataset.str.startswith("stem")]
 if results_stem.size > 0:
     print()
     print("STEM Results:")
     summarize_results(results_stem)
 #
 # # Compute the results for TEM (=01).
-results_tem = results[results.dataset.str.startswith("01")]
+results_tem = results[results.dataset == "tem"]
 if results_tem.size > 0:
     print()
     print("TEM Results:")
     summarize_results(results_tem)
 
 #
-# Compute the results for Wichmann.
-results_wichmann = results[results.dataset.str.startswith("wichmann")]
+# Compute the results for Wichmann / endbulb of held.
+results_wichmann = results[results.dataset.str.startswith("endbulb")]
 if results_wichmann.size > 0:
     print()
-    print("Wichmann Results:")
+    print("Endbulb of Held Results:")
     summarize_results(results_wichmann)
