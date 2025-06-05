@@ -57,8 +57,8 @@ def merge_az(name, version, check):
             napari.run()
 
         else:
-            with h5py.File(gt_path, "a") as f:
-                f.create_dataset("labels/az_merged", data=az_merged, compression="lzf")
+            with h5py.File(seg_path, "a") as f:
+                f.create_dataset(f"labels/az_merged_v{version}", data=az_merged, compression="lzf")
 
 
 def visualize_merge(args):

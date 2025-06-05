@@ -3,9 +3,9 @@ import os
 
 
 # The root folder which contains the new AZ training data.
-INPUT_ROOT = "/mnt/ceph-hdd/cold_store/projects/nim00007/new_AZ_train_data"
+INPUT_ROOT = "/mnt/ceph-hdd/cold/nim00007/new_AZ_train_data"
 # The output folder for AZ predictions.
-OUTPUT_ROOT = "/mnt/ceph-hdd/cold_store/projects/nim00007/AZ_predictions_new"
+OUTPUT_ROOT = "/mnt/ceph-hdd/cold/nim00007/AZ_predictions_new"
 
 # The names of all datasets for which to run prediction / evaluation.
 # This excludes 'endbulb_of_held_cropped', which is a duplicate of 'endbulb_of_held',
@@ -61,9 +61,11 @@ def get_file_names(name, split_folder, split_names):
 
 
 def get_split_folder(version):
-    assert version in (3, 4, 5)
+    assert version in (3, 4, 5, 6)
     if version == 3:
         split_folder = "splits"
+    elif version == 6:
+        split_folder= "/mnt/ceph-hdd/cold/nim00007/new_AZ_train_data/splits"
     else:
         split_folder = "models_az_thin"
     return split_folder

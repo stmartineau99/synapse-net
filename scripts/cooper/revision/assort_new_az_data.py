@@ -5,10 +5,13 @@ import h5py
 import numpy as np
 from tqdm import tqdm
 from skimage.transform import resize
+from skimage.measure import label
+from scipy.ndimage import binary_closing
 
-ROOT = "/mnt/ceph-hdd/cold_store/projects/nim00007/AZ_data/training_data"
-INTER_ROOT = "/mnt/ceph-hdd/cold_store/projects/nim00007/AZ_predictions"
-OUTPUT_ROOT = "/mnt/ceph-hdd/cold_store/projects/nim00007/new_AZ_train_data"
+ROOT = "/mnt/ceph-hdd/cold/nim00007/AZ_data/training_data"
+INTER_ROOT = "/mnt/ceph-hdd/cold/nim00007/AZ_predictions"
+OUTPUT_ROOT = "/mnt/ceph-hdd/cold/nim00007/new_AZ_train_data"
+STEM_INPUT="/mnt/lustre-emmy-hdd/usr/u12095/synaptic_reconstruction/for_revison/postprocessed_AZ"
 
 
 def _check_data(files, label_folder, check_thinned):
@@ -195,6 +198,70 @@ def crop_wichmann():
             f.create_dataset("labels/az", data=az, compression="lzf")
             f.create_dataset("labels/az_thin", data=az, compression="lzf")
 
+def crop_stem():
+    input_name = "04_hoi_stem_examples_minusSVseg"
+    output_name = "stem_cropped2"
+
+    input_folder = os.path.join(STEM_INPUT, input_name)
+    output_folder = os.path.join(OUTPUT_ROOT, output_name)
+    os.makedirs(output_folder, exist_ok=True)
+    files = glob(os.path.join(input_folder, "*.h5"))
+
+    min_shape = (32, 512, 512)
+
+    for ff in tqdm(files):
+        with h5py.File(ff, "r") as f:
+            az = f["labels/az"][:]
+            raw_full = f["raw"][:]
+
+        # Label connected components in the az volume 
+        labeled = label(az)
+        num, sizes = np.unique(labeled, return_counts=True)
+        #print(f"num {num}, sizes {sizes}")
+        num, sizes = num[1:], sizes[1:]
+
+        #exclude artifacts and background
+        keep_labels = num[(sizes > 2000) & (num != 0)]
+        #print(f"keep_labels {keep_labels}")
+
+        #Clean up az annotations
+        az = np.isin(labeled, keep_labels).astype("uint8")
+        # Apply binary closing.
+        az = np.logical_or(az, binary_closing(az, iterations=4)).astype("uint8")
+
+        crop_id = 1
+        for l in keep_labels:
+
+            output_path = os.path.join(output_folder, os.path.basename(ff).replace(".h5", f"_crop{crop_id}.h5"))
+            if os.path.exists(output_path):
+                print(f"Skipping existing file: {output_path}")
+                crop_id += 1
+                continue
+
+
+            mask = labeled == l
+            bb = np.where(mask)
+            if not bb[0].size:
+                continue
+            bb = tuple(slice(int(b.min()), int(b.max()) + 1) for b in bb)
+            pad_width = [max(sh - (b.stop - b.start), 0) // 2 for b, sh in zip(bb, min_shape)]
+            bb = tuple(
+                slice(max(b.start - pw, 0), min(b.stop + pw, sh)) for b, pw, sh in zip(bb, pad_width, az.shape)
+            )
+            az_crop = az[bb]
+            raw_crop = raw_full[bb]
+
+
+            import napari
+            v = napari.Viewer()
+            v.add_image(raw_crop)
+            v.add_labels(az_crop)
+            napari.run()
+
+            with h5py.File(output_path, "a") as f:
+                f.create_dataset("raw", data=raw_crop, compression="lzf")
+                f.create_dataset("labels/az", data=az_crop, compression="lzf")
+            crop_id += 1
 
 def main():
     # assort_tem()
@@ -203,7 +270,9 @@ def main():
     # assort_stem()
 
     # assort_wichmann()
-    crop_wichmann()
+    #crop_wichmann()
+
+    crop_stem()
 
 
 if __name__ == "__main__":
