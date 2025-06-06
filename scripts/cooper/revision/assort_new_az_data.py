@@ -199,7 +199,8 @@ def crop_wichmann():
             f.create_dataset("labels/az_thin", data=az, compression="lzf")
 
 def crop_stem():
-    input_name = "04_hoi_stem_examples_minusSVseg"
+    #forgot about 06, added later
+    input_name = "06_hoi_wt_stem750_fm_minusSVseg"#"04_hoi_stem_examples_minusSVseg"
     output_name = "stem_cropped2"
 
     input_folder = os.path.join(STEM_INPUT, input_name)
