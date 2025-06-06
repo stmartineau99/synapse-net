@@ -2,6 +2,7 @@ import os
 from glob import glob
 
 import h5py
+import tifffile
 import numpy as np
 from tqdm import tqdm
 from skimage.transform import resize
@@ -12,6 +13,7 @@ ROOT = "/mnt/ceph-hdd/cold/nim00007/AZ_data/training_data"
 INTER_ROOT = "/mnt/ceph-hdd/cold/nim00007/AZ_predictions"
 OUTPUT_ROOT = "/mnt/ceph-hdd/cold/nim00007/new_AZ_train_data"
 STEM_INPUT="/mnt/lustre-emmy-hdd/usr/u12095/synaptic_reconstruction/for_revison/postprocessed_AZ"
+TIF_INPUT = "/mnt/ceph-hdd/cold/nim00007/new_AZ_train_data/stem/"
 
 
 def _check_data(files, label_folder, check_thinned):
@@ -264,6 +266,82 @@ def crop_stem():
                 f.create_dataset("labels/az", data=az_crop, compression="lzf")
             crop_id += 1
 
+def get_bounding_box_3d(file_path, raw_volume):
+    volume = tifffile.imread(file_path)
+    filename = os.path.basename(file_path)
+    print(f"filename {filename}")
+    
+    # Find the z index where the 2D rectangle is located (non-zero slice)
+    z_indices = np.where(np.any(volume, axis=(1, 2)))[0]
+    
+    if len(z_indices) == 0:
+        raise ValueError("No non-zero 2D rectangle found in the volume.")
+    
+    z_rect = z_indices[0]
+    
+    # Get the 2D mask from that slice
+    mask_2d = volume[z_rect]
+    y_indices, x_indices = np.where(mask_2d)
+    
+    if len(x_indices) == 0 or len(y_indices) == 0:
+        raise ValueError("Found slice has no non-zero pixels.")
+    
+    x_min, x_max = x_indices.min(), x_indices.max() + 1
+    y_min, y_max = y_indices.min(), y_indices.max() + 1
+    
+    # Determine z_start and z_end based on filename
+    if filename.endswith("_toend.tif"):
+        z_start, z_end = z_rect, raw_volume.shape[0]
+    elif filename.endswith("_tostart.tif"):
+        z_start, z_end = 0, z_rect + 1
+    else:
+        print("here?")
+        z_start, z_end = z_rect, z_rect + 1
+
+    # Return bounding box as slices, usable directly for numpy indexing
+    return (
+        slice(z_start, z_end),
+        slice(y_min, y_max),
+        slice(x_min, x_max)
+    )
+
+def neg_crop_stem():
+    input_name = "mask_for_neg_example"#"04_hoi_stem_examples_minusSVseg"
+    output_name = "stem_cropped2"
+
+    input_folder = TIF_INPUT
+    tif_input_folder = os.path.join(TIF_INPUT, input_name)
+    output_folder = os.path.join(OUTPUT_ROOT, output_name)
+    os.makedirs(output_folder, exist_ok=True)
+    tif_files = glob(os.path.join(tif_input_folder, "*.tif"))
+    print(f"tif_files {tif_files}")
+
+    for ff in tqdm(tif_files):
+        input_path = os.path.join(input_folder, os.path.basename(ff).replace('_tostart.tif', '.h5').replace('_toend.tif', '.h5'))
+        with h5py.File(input_path, "r") as f:
+            raw_full = f["raw"][:]
+
+
+        output_path = os.path.join(output_folder, os.path.basename(ff).replace('_tostart.tif', '_cropped_noAZ.h5').replace('_toend.tif', '_cropped_noAZ.h5'))
+        if os.path.exists(output_path):
+            print(f"Skipping existing file: {output_path}")
+            continue
+
+
+        bb = get_bounding_box_3d(ff, raw_full)
+        print(f"bb {bb}")
+
+        raw_crop = raw_full[bb]
+
+
+        import napari
+        v = napari.Viewer()
+        v.add_image(raw_crop)
+        napari.run()
+
+        with h5py.File(output_path, "a") as f:
+            f.create_dataset("raw", data=raw_crop, compression="lzf")
+
 def main():
     # assort_tem()
     # assort_chemical_fixation()
@@ -273,7 +351,8 @@ def main():
     # assort_wichmann()
     #crop_wichmann()
 
-    crop_stem()
+    #crop_stem()
+    neg_crop_stem()
 
 
 if __name__ == "__main__":
