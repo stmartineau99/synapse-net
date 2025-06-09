@@ -9,12 +9,12 @@ from sklearn.model_selection import train_test_split
 
 from synapse_net.training import supervised_training, AZDistanceLabelTransform
 
-TRAIN_ROOT = "/mnt/ceph-hdd/cold_store/projects/nim00007/new_AZ_train_data"
+TRAIN_ROOT = "/mnt/ceph-hdd/cold/nim00007/new_AZ_train_data"
 OUTPUT_ROOT = "./models_az_thin"
 
 
 def _require_train_val_test_split(datasets):
-    train_ratio, val_ratio, test_ratio = 0.70, 0.1, 0.2
+    train_ratio, val_ratio, test_ratio = 0.60, 0.2, 0.2
 
     def _train_val_test_split(names):
         train, test = train_test_split(names, test_size=1 - train_ratio, shuffle=True)
@@ -87,9 +87,14 @@ def train(key, ignore_label=None, use_distances=False, training_2D=False, testse
 
     os.makedirs(OUTPUT_ROOT, exist_ok=True)
 
-    datasets = ["tem", "chemical_fixation", "stem", "stem_cropped", "endbulb_of_held", "endbulb_of_held_cropped"]
-    train_paths = get_paths("train", datasets=datasets, testset=testset)
-    val_paths = get_paths("val", datasets=datasets, testset=testset)
+    datasets_with_testset_true = ["tem", "chemical_fixation", "stem", "endbulb_of_held"]
+    datasets_with_testset_false = ["stem_cropped", "endbulb_of_held_cropped"]
+
+    train_paths = get_paths("train", datasets=datasets_with_testset_true, testset=True)
+    val_paths = get_paths("val", datasets=datasets_with_testset_true, testset=True)
+
+    train_paths += get_paths("train", datasets=datasets_with_testset_false, testset=False)
+    val_paths += get_paths("val", datasets=datasets_with_testset_false, testset=False)
 
     print("Start training with:")
     print(len(train_paths), "tomograms for training")
@@ -97,7 +102,7 @@ def train(key, ignore_label=None, use_distances=False, training_2D=False, testse
 
     # patch_shape = [48, 256, 256]
     patch_shape = [48, 384, 384]
-    model_name = "v6"
+    model_name = "v7"
 
     # checking for 2D training
     if training_2D:
@@ -121,7 +126,7 @@ def train(key, ignore_label=None, use_distances=False, training_2D=False, testse
         sampler=torch_em.data.sampler.MinInstanceSampler(min_num_instances=1, p_reject=0.85),
         n_samples_train=None, n_samples_val=100,
         check=check,
-        save_root=OUTPUT_ROOT,
+        save_root="/mnt/lustre-emmy-hdd/usr/u12095/synapse_net/models/ConstantinAZ",
         n_iterations=int(2e5),
         ignore_label=ignore_label,
         label_transform=label_transform,

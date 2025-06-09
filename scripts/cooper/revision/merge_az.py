@@ -1,5 +1,6 @@
 import argparse
 import os
+from glob import glob
 
 import h5py
 import napari
@@ -19,13 +20,19 @@ SKIP_MERGE = [
 # STEM CROPPED IS OFTEN TOO SMALL!
 def merge_az(name, version, check):
     split_folder = get_split_folder(version)
-    file_names = get_file_names(name, split_folder, split_names=["train", "val", "test"])
+   
+    if name == "stem_cropped":
+        file_paths = glob(os.path.join("/mnt/ceph-hdd/cold/nim00007/new_AZ_train_data/stem_cropped", "*.h5"))
+        file_names = [os.path.basename(path) for path in file_paths]
+    else:
+        file_names = get_file_names(name, split_folder, split_names=["train", "val", "test"])
     seg_paths, gt_paths = get_paths(name, file_names)
 
     for seg_path, gt_path in zip(seg_paths, gt_paths):
 
         with h5py.File(gt_path, "r") as f:
-            if not check and ("labels/az_merged" in f):
+            #if not check and ("labels/az_merged" in f):
+            if f"labels/az_merged_v{version}" in f :
                 continue
             raw = f["raw"][:]
             gt = f["labels/az"][:]
@@ -56,9 +63,16 @@ def merge_az(name, version, check):
             v.title = f"{name}/{fname}"
             napari.run()
 
-        else:
-            with h5py.File(seg_path, "a") as f:
+            print(f"gt_path {gt_path}")
+            with h5py.File(gt_path, "a") as f:
                 f.create_dataset(f"labels/az_merged_v{version}", data=az_merged, compression="lzf")
+
+        else:
+            print(f"gt_path {gt_path}")
+            with h5py.File(gt_path, "a") as f:
+                f.create_dataset(f"labels/az_merged_v{version}", data=az_merged, compression="lzf")
+            '''with h5py.File(seg_path, "a") as f:
+                f.create_dataset(f"labels/az_merged_v{version}", data=az_merged, compression="lzf")'''
 
 
 def visualize_merge(args):

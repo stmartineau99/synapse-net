@@ -5,7 +5,7 @@ import os
 # The root folder which contains the new AZ training data.
 INPUT_ROOT = "/mnt/ceph-hdd/cold/nim00007/new_AZ_train_data"
 # The output folder for AZ predictions.
-OUTPUT_ROOT = "/mnt/ceph-hdd/cold/nim00007/AZ_predictions_new"
+OUTPUT_ROOT = "/mnt/ceph-hdd/cold/nim00007/AZ_prediction_new_copy"
 
 # The names of all datasets for which to run prediction / evaluation.
 # This excludes 'endbulb_of_held_cropped', which is a duplicate of 'endbulb_of_held',
