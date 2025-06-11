@@ -1,5 +1,6 @@
 import argparse
 import os
+from glob import glob
 
 import h5py
 from synapse_net.inference.active_zone import segment_active_zone
@@ -9,22 +10,28 @@ from tqdm import tqdm
 from common import get_file_names, get_split_folder, ALL_NAMES, INPUT_ROOT, OUTPUT_ROOT
 
 
-def run_prediction(model, name, split_folder, version, split_names):
-    file_names = get_file_names(name, split_folder, split_names=split_names)
+def run_prediction(model, name, split_folder, version, split_names, input_path):
+    if input_path:
+        file_names =glob(os.path.join(input_path, name, "*.h5"))
+    else:
+        file_names = get_file_names(name, split_folder, split_names=split_names)
 
     output_folder = os.path.join(OUTPUT_ROOT, name)
     os.makedirs(output_folder, exist_ok=True)
     output_key = f"predictions/az/v{version}"
 
     for fname in tqdm(file_names):
+        input_path = os.path.join(INPUT_ROOT, name, fname)
+        print(f"segmenting {input_path}")
+
         output_path = os.path.join(output_folder, fname)
 
         if os.path.exists(output_path):
             with h5py.File(output_path, "r") as f:
                 if output_key in f:
+                    print(f"skipping, because {output_key} already exists in {output_path}")
                     continue
 
-        input_path = os.path.join(INPUT_ROOT, name, fname)
         with h5py.File(input_path, "r") as f:
             raw = f["raw"][:]
 
@@ -34,10 +41,12 @@ def run_prediction(model, name, split_folder, version, split_names):
 
 
 def get_model(version):
-    assert version in (3, 4, 5)
+    assert version in (3, 4, 5, 7)
     split_folder = get_split_folder(version)
     if version == 3:
         model_path = os.path.join(split_folder, "checkpoints", "3D-AZ-model-TEM_STEM_ChemFix_wichmann-v3")
+    elif version == 7:
+        model_path = "/mnt/lustre-emmy-hdd/usr/u12095/synapse_net/models/ConstantinAZ/checkpoints/v7/"
     else:
         model_path = os.path.join(split_folder, "checkpoints", f"v{version}")
     model = load_model(model_path)
@@ -49,12 +58,22 @@ def main():
     parser.add_argument("--version", "-v", type=int)
     parser.add_argument("--names", nargs="+", default=ALL_NAMES)
     parser.add_argument("--splits", nargs="+", default=["test"])
+    parser.add_argument("--model_path", default=None)
+    parser.add_argument("--input", "-i", default=None)
+
     args = parser.parse_args()
 
-    model = get_model(args.version)
+    if args.model_path:
+        model = load_model(model_path)
+    else:
+        model = get_model(args.version)
+
     split_folder = get_split_folder(args.version)
+
     for name in args.names:
-        run_prediction(model, name, split_folder, args.version, args.splits)
+        run_prediction(model, name, split_folder, args.version, args.splits, args.input)
+    
+    print("Finished segmenting!")
 
 
 if __name__ == "__main__":
