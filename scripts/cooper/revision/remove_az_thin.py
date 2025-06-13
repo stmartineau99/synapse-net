@@ -17,7 +17,7 @@ for file in files:
         # Recreate the dataset with the new data
         f.create_dataset("labels/az_thin", data=gt)
 '''
-import os
+'''import os
 import h5py
 from glob import glob
 import numpy as np
@@ -41,4 +41,32 @@ for fname in all_file_paths:
             f.create_dataset("/labels/az_merged_v6", data=az_merged, compression="lzf")
             print(f"Updated file: {fname}")
         else:
-            print(f"Dataset not found in: {fname}")
+            print(f"Dataset not found in: {fname}")'''
+
+import os
+import h5py
+
+# List of target folders
+base_path = "/mnt/lustre-emmy-hdd/projects/nim00007/data/synaptic-reconstruction/cooper/ground_truth/04Dataset_for_vesicle_eval"
+folders = [
+    "20241019_Tomo-eval_MF_Synapse",
+    "20241019_Tomo-eval_PS_Synapse",
+    "20241019_Tomo-eval_SC_Synapse"
+]
+
+# Keys to delete
+keys_to_delete = ["/predictions/az/seg_v7", "/predictions/az/v7", "/predictions/az", "/predictions"]
+
+for folder in folders:
+    folder_path = os.path.join(base_path, folder)
+    for filename in os.listdir(folder_path):
+        if filename.endswith(".h5"):
+            file_path = os.path.join(folder_path, filename)
+            print(f"Processing: {file_path}")
+            with h5py.File(file_path, 'a') as h5file:
+                for key in keys_to_delete:
+                    if key in h5file:
+                        print(f"  Deleting key: {key}")
+                        del h5file[key]
+                    else:
+                        print(f"  Key not found: {key}")

@@ -10,34 +10,47 @@ from tqdm import tqdm
 from common import get_file_names, get_split_folder, ALL_NAMES, INPUT_ROOT, OUTPUT_ROOT
 
 
-def run_prediction(model, name, split_folder, version, split_names, input_path):
-    if input_path:
-        file_names =glob(os.path.join(input_path, name, "*.h5"))
+def run_prediction(model, name, split_folder, version, split_names, in_path):
+    if in_path:
+        file_paths = glob(os.path.join(in_path, name, "*.h5"))
+        file_names = [os.path.basename(path) for path in file_paths]
     else:
         file_names = get_file_names(name, split_folder, split_names=split_names)
 
     output_folder = os.path.join(OUTPUT_ROOT, name)
     os.makedirs(output_folder, exist_ok=True)
     output_key = f"predictions/az/v{version}"
+    output_key_seg = f"predictions/az/seg_v{version}"
 
     for fname in tqdm(file_names):
-        input_path = os.path.join(INPUT_ROOT, name, fname)
+        if in_path:
+            input_path=os.path.join(in_path, name, fname)
+        else:
+            input_path = os.path.join(INPUT_ROOT, name, fname)
         print(f"segmenting {input_path}")
 
         output_path = os.path.join(output_folder, fname)
 
         if os.path.exists(output_path):
             with h5py.File(output_path, "r") as f:
-                if output_key in f:
-                    print(f"skipping, because {output_key} already exists in {output_path}")
+                if output_key in f and output_key_seg in f:
+                    print(f"skipping, because {output_key} and {output_key_seg} already exists in {output_path}")
                     continue
 
         with h5py.File(input_path, "r") as f:
             raw = f["raw"][:]
 
-        _, pred = segment_active_zone(raw, model=model, verbose=False, return_predictions=True)
+        seg, pred = segment_active_zone(raw, model=model, verbose=False, return_predictions=True)
         with h5py.File(output_path, "a") as f:
-            f.create_dataset(output_key, data=pred, compression="lzf")
+            if output_key in f:
+                print(f"{output_key} already saved")
+            else:
+                f.create_dataset(output_key, data=pred, compression="lzf")
+            if output_key_seg in f:
+                print(f"{output_key_seg} already saved")
+            else:
+                f.create_dataset(output_key_seg, data=seg, compression="lzf")
+                
 
 
 def get_model(version):

@@ -23,7 +23,7 @@ def run_az_evaluation(args):
         results.append(result)
 
     results = pd.concat(results)
-    output_path = f"./results/v{args.version}.xlsx"
+    output_path = f"/user/muth9/u12095/synapse-net/scripts/cooper/revision/evaluation_results/v{args.version}.xlsx"
     results.to_excel(output_path, index=False)
 
 

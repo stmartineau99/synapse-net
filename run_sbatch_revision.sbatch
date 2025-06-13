@@ -10,5 +10,5 @@
 
 source ~/.bashrc
 conda activate synapse-net
-python /user/muth9/u12095/synapse-net/scripts/cooper/revision/az_prediction.py -v 7 --names 20241019_Tomo-eval_MF_Synapse 20241019_Tomo-eval_PS_Synapse  \
+python /user/muth9/u12095/synapse-net/scripts/cooper/revision/az_prediction.py -v 7 --names 20241019_Tomo-eval_MF_Synapse 20241019_Tomo-eval_PS_Synapse 20241019_Tomo-eval_SC_Synapse  \
     -i /mnt/lustre-emmy-hdd/projects/nim00007/data/synaptic-reconstruction/cooper/ground_truth/04Dataset_for_vesicle_eval 

@@ -18,13 +18,16 @@ def check_predictions(name, split, version):
             gt = f["labels/az"][:] if version == 3 else f["labels/az_thin"][:]
 
         with h5py.File(seg_path) as f:
-            seg_key = f"predictions/az/v{version}"
-            pred = f[seg_key][:]
+            pred_key = f"predictions/az/v{version}"
+            seg_key = f"predictions/az/seg_v{version}"
+            pred = f[pred_key][:]
+            seg = f[seg_key][:]
 
         v = napari.Viewer()
         v.add_image(raw)
         v.add_image(pred, blending="additive")
         v.add_labels(gt)
+        v.add_labels(seg)
         v.title = f"{name}/{os.path.basename(seg_path)}"
         napari.run()
 
