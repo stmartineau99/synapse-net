@@ -1,9 +1,9 @@
 import argparse
 import os
 
-from .analysis_segmentations import run_predictions
-from .data_analysis import calc_AZ_SV_distance, calc_SV_diameters, combine_lists, sort_by_distances
-from .store_results import run_store_results
+from analysis_segmentations import run_predictions
+from data_analysis import calc_AZ_SV_distance, calc_SV_diameters, combine_lists, sort_by_distances
+from store_results import run_store_results
 
 def run_data_analysis(input_path, output_path, store, resolution, analysis_output):
     print("Starting SV, compartment, and AZ predictions")
@@ -33,7 +33,7 @@ def main():
         help="Path to an HDF5 file or directory of files."
     )
     parser.add_argument(
-        "--analysis_output", "-s", type=str, required=True,
+        "--analysis_output", "-s", type=str, default = "./analysis_results/",
         help="Path to the folder where the analysis results get saved."
     )
     parser.add_argument(
