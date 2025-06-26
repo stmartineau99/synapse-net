@@ -56,26 +56,34 @@ def SV_pred(raw: np.ndarray, SV_model: str, output_path: str = None, store: bool
     Returns:
         np.ndarray: Segmentation result.
     """
-    #Excluding boundary SV, because they would also not be used in the manual annotation
-    seg, pred = segment_vesicles(input_volume=raw, model_path=SV_model, exclude_boundary=True, verbose=False, return_predictions=True)
+    pred_key = f"predictions/SV/pred"
+    seg_key = f"predictions/SV/seg"
 
-    if store and output_path:
-        pred_key = f"predictions/SV/pred"
-        seg_key = f"predictions/SV/seg"
-
+    use_existing_seg = False
+    #checking if segmentation is already in output path and if so, use it
+    if output_path:
         with h5py.File(output_path, "a") as f:
-            if pred_key in f:
-                print(f"{pred_key} already saved")
-            else:
-                f.create_dataset(pred_key, data=pred, compression="lzf")
             if seg_key in f:
-                print(f"{seg_key} already saved")
-            else:
+                seg = f[seg_key][:]
+                use_existing_seg = True
+                print(f"Using existing SV seg in {output_path}")
+
+    if not use_existing_seg:
+        #Excluding boundary SV, because they would also not be used in the manual annotation
+        seg, pred = segment_vesicles(input_volume=raw, model_path=SV_model, exclude_boundary=True, verbose=False, return_predictions=True)
+
+        if store and output_path:
+            with h5py.File(output_path, "a") as f:
+                if pred_key in f:
+                    print(f"{pred_key} already saved")
+                else:
+                    f.create_dataset(pred_key, data=pred, compression="lzf")
+                
                 f.create_dataset(seg_key, data=seg, compression="lzf")
-    elif store and not output_path:
-        print("Output path is missing, not storing SV predictions")
-    else:
-        print("Not storing SV predictions")
+        elif store and not output_path:
+            print("Output path is missing, not storing SV predictions")
+        else:
+            print("Not storing SV predictions")
     
     return seg
 
@@ -93,26 +101,35 @@ def compartment_pred(raw: np.ndarray, compartment_model: str, output_path: str =
     Returns:
         np.ndarray: Segmentation result.
     """
-    seg, pred = segment_compartments(input_volume=raw, model_path=compartment_model, verbose=False, return_predictions=True)
 
-    if store and output_path:
-        pred_key = f"predictions/compartment/pred"
-        seg_key = f"predictions/compartment/seg"
+    pred_key = f"predictions/compartment/pred"
+    seg_key = f"predictions/compartment/seg"
 
+    use_existing_seg = False
+    #checking if segmentation is already in output path and if so, use it
+    if output_path:
         with h5py.File(output_path, "a") as f:
-            if pred_key in f:
-                print(f"{pred_key} already saved")
-            else:
-                f.create_dataset(pred_key, data=pred, compression="lzf")
             if seg_key in f:
-                print(f"{seg_key} already saved")
-            else:
+                seg = f[seg_key][:]
+                use_existing_seg = True
+                print(f"Using existing compartment seg in {output_path}")
+
+    if not use_existing_seg:
+        seg, pred = segment_compartments(input_volume=raw, model_path=compartment_model, verbose=False, return_predictions=True)
+
+        if store and output_path:
+            with h5py.File(output_path, "a") as f:
+                if pred_key in f:
+                    print(f"{pred_key} already saved")
+                else:
+                    f.create_dataset(pred_key, data=pred, compression="lzf")
+
                 f.create_dataset(seg_key, data=seg, compression="lzf")
-    elif store and not output_path:
-        print("Output path is missing, not storing compartment predictions")
-    else:
-        print("Not storing compartment predictions")
-    
+        elif store and not output_path:
+            print("Output path is missing, not storing compartment predictions")
+        else:
+            print("Not storing compartment predictions")
+
     return seg
 
 
@@ -129,25 +146,35 @@ def AZ_pred(raw: np.ndarray, AZ_model: str, output_path: str = None, store: bool
     Returns:
         np.ndarray: Segmentation result.
     """
-    seg, pred = segment_active_zone(raw, model_path=AZ_model, verbose=False, return_predictions=True)
+    pred_key = f"predictions/az/pred"
+    seg_key = f"predictions/az/seg"
 
-    if store and output_path:
-        pred_key = f"predictions/az/pred"
-        seg_key = f"predictions/az/seg"
-
+    use_existing_seg = False
+    #checking if segmentation is already in output path and if so, use it
+    if output_path:
         with h5py.File(output_path, "a") as f:
-            if pred_key in f:
-                print(f"{pred_key} already saved")
-            else:
-                f.create_dataset(pred_key, data=pred, compression="lzf")
             if seg_key in f:
-                print(f"{seg_key} already saved")
-            else:
+                seg = f[seg_key][:]
+                use_existing_seg = True
+                print(f"Using existing AZ seg in {output_path}")
+
+    if not use_existing_seg:
+
+        seg, pred = segment_active_zone(raw, model_path=AZ_model, verbose=False, return_predictions=True)
+
+        if store and output_path:
+            
+            with h5py.File(output_path, "a") as f:
+                if pred_key in f:
+                    print(f"{pred_key} already saved")
+                else:
+                    f.create_dataset(pred_key, data=pred, compression="lzf")
+
                 f.create_dataset(seg_key, data=seg, compression="lzf")
-    elif store and not output_path:
-        print("Output path is missing, not storing AZ predictions")
-    else:
-        print("Not storing AZ predictions")
+        elif store and not output_path:
+            print("Output path is missing, not storing AZ predictions")
+        else:
+            print("Not storing AZ predictions")
     
     return seg
 
