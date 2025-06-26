@@ -16,7 +16,12 @@ def calc_AZ_SV_distance(vesicles, az, resolution):
     """
     distances, _, _, seg_ids = measure_segmentation_to_object_distances(vesicles, az, resolution=resolution)
 
-    dist_list = [{"seg_id": sid, "distance": dist} for sid, dist in zip(seg_ids, distances)]
+    # Exclude seg_id == 0
+    dist_list = [
+        {"seg_id": sid, "distance": dist}
+        for sid, dist in zip(seg_ids, distances)
+        if sid != 0
+    ]
     dist_list.sort(key=lambda x: x["seg_id"])
 
     return dist_list
@@ -86,7 +91,12 @@ def calc_SV_diameters(vesicles, resolution):
     radii_nm = radii * resolution[0]
     diameters = radii_nm * 2
 
-    diam_list = [{"seg_id": sid, "diameter": diam} for sid, diam in zip(seg_ids, diameters)]
+    # Exclude seg_id == 0
+    diam_list = [
+        {"seg_id": sid, "diameter": diam}
+        for sid, diam in zip(seg_ids, diameters)
+        if sid != 0
+    ]
     diam_list.sort(key=lambda x: x["seg_id"])
 
     return diam_list

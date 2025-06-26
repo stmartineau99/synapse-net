@@ -1,5 +1,6 @@
 import argparse
 import os
+from tqdm import tqdm
 
 from analysis_segmentations import run_predictions
 from data_analysis import calc_AZ_SV_distance, calc_SV_diameters, combine_lists, sort_by_distances
@@ -18,6 +19,7 @@ def run_data_analysis(input_path, output_path, store, resolution, analysis_outpu
 
     print("Combining lists")
     combined_list = combine_lists(dist_list, diam_list)
+    print(combined_list)
 
     print("Sorting the combined list by distances")
     sorted_list = sort_by_distances(combined_list)
@@ -52,10 +54,25 @@ def main():
     args = parser.parse_args()
 
     input_path = args.input_path
+    # Get the last directory name of the input_path
+    if os.path.isdir(input_path):
+        input_name = os.path.basename(os.path.normpath(input_path))
+    else:
+        input_name = os.path.basename(os.path.dirname(input_path))
+
+    #get complete output_folder if there was an input
     output_folder = args.output_folder
+    if output_folder:
+        output_folder = os.path.join(output_folder, input_name)
+        os.makedirs(output_folder, exist_ok=True)
+
     store = args.store
     resolution = args.resolution
+
+    #get complete output path for the analysis
     analysis_output = args.analysis_output
+    analysis_output = os.path.join(analysis_output, input_name)
+    os.makedirs(analysis_output, exist_ok=True)
 
     if os.path.isfile(input_path):
         filename = os.path.basename(input_path)
@@ -63,8 +80,8 @@ def main():
         run_data_analysis(input_path, output_path, store, resolution, analysis_output)
 
     elif os.path.isdir(input_path):
-        for file in os.listdir(input_path):
-            if file.endswith(".h5"):
+            h5_files = [file for file in os.listdir(input_path) if file.endswith(".h5")]
+            for file in tqdm(h5_files, desc="Processing files"):
                 full_input_path = os.path.join(input_path, file)
                 output_path = os.path.join(output_folder, file) if output_folder else None
                 run_data_analysis(full_input_path, output_path, store, resolution, analysis_output)
