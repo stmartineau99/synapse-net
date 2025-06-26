@@ -108,7 +108,11 @@ def save_filtered_dataframes_with_seg_id(output_dir, tomogram_name, df):
     }
 
     for filename, max_dist in thresholds.items():
-        file_path = os.path.join(output_dir, f"{filename}.csv")
+        #storing with seg ID data in subfolder
+        with_segID_dir = os.path.join(output_dir, "with_segID")
+        os.makedirs(with_segID_dir, exist_ok=True)
+        file_path = os.path.join(with_segID_dir, f"{filename}.csv")
+        
         filtered_df = df if max_dist is None else df[df['distance'] <= max_dist]
 
         if filename == 'AZ_distances_within_40_with_diameters_and_seg_id':
