@@ -155,6 +155,7 @@ def segment_compartments(
     scale: Optional[List[float]] = None,
     mask: Optional[np.ndarray] = None,
     n_slices_exclude: int = 0,
+    boundary_threshold: float=0.4,
     **kwargs,
 ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
     """Segment synaptic compartments in an input volume.
@@ -168,6 +169,7 @@ def segment_compartments(
         return_predictions: Whether to return the predictions (foreground, boundaries) alongside the segmentation.
         scale: The scale factor to use for rescaling the input volume before prediction.
         n_slices_exclude:
+        boundary_threshold: Threshold that determines when the prediction of the network is foreground for the segmentation. Need higher threshold than default for TEM.
 
     Returns:
         The segmentation mask as a numpy array, or a tuple containing the segmentation mask
@@ -193,9 +195,9 @@ def segment_compartments(
     # We may want to expose some of the parameters here.
     t0 = time.time()
     if input_volume.ndim == 2:
-        seg = _segment_compartments_2d(pred)
+        seg = _segment_compartments_2d(pred, boundary_threshold=boundary_threshold)
     else:
-        seg = _segment_compartments_3d(pred, n_slices_exclude=n_slices_exclude)
+        seg = _segment_compartments_3d(pred, n_slices_exclude=n_slices_exclude, boundary_threshold=boundary_threshold)
     if verbose:
         print("Run segmentation in", time.time() - t0, "s")
 
