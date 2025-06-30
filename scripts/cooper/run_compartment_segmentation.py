@@ -15,7 +15,7 @@ def run_compartment_segmentation(args):
         model_path = args.model
 
     segmentation_function = partial(
-        segment_compartments, model_path=model_path, verbose=False, tiling=tiling, scale=[0.25, 0.25, 0.25]
+        segment_compartments, model_path=model_path, verbose=False, tiling=tiling, scale=[0.25, 0.25, 0.25], boundary_threshold=args.boundary_threshold
     )
     inference_helper(
         args.input_path, args.output_path, segmentation_function, force=args.force, data_ext=args.data_ext
@@ -49,6 +49,9 @@ def main():
     )
     parser.add_argument(
         "--data_ext", default=".mrc", help="The extension of the tomogram data. By default .mrc."
+    )
+    parser.add_argument(
+        "--boundary_threshold", type=float, default=0.4, help="Threshold that determines when the prediction of the network is foreground for the segmentation. Need higher threshold than default for TEM."
     )
 
     args = parser.parse_args()
