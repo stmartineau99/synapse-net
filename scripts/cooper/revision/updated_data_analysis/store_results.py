@@ -42,29 +42,29 @@ def prepare_output_directory(base_output, group):
     os.makedirs(group_dir, exist_ok=True)
     return group_dir
 
-def write_or_append_csv(file_path, new_data):
+def write_or_append_excel(file_path, new_data):
     """
-    Writes a new DataFrame to CSV, or appends a new column(s) to an existing one.
+    Writes a new DataFrame to Excel, or appends a new column(s) to an existing one.
 
     Parameters:
-        file_path (str): Path to the target CSV file.
+        file_path (str): Path to the target Excel file.
         new_data (pd.DataFrame): DataFrame to write or append.
     """
     print(f"saving {file_path}")
     if os.path.exists(file_path):
-        existing = pd.read_csv(file_path, index_col=0)
+        existing = pd.read_excel(file_path, index_col=0)
         combined = pd.concat([existing, new_data], axis=1)
     else:
         combined = new_data
 
-    combined.to_csv(file_path)
+    combined.to_excel(file_path, index=True) 
 
 def save_filtered_dataframes(output_dir, tomogram_name, df):
     """
-    Saves the sorted segment data into multiple filtered CSV files.
+    Saves the sorted segment data into multiple filtered Excel files.
 
     Parameters:
-        output_dir (str): Directory where CSVs will be saved.
+        output_dir (str): Directory where Excel files will be saved.
         tomogram_name (str): Name of the tomogram (used as column header).
         df (pd.DataFrame): DataFrame containing 'seg_id', 'distance', and 'diameter'.
     """
@@ -74,10 +74,11 @@ def save_filtered_dataframes(output_dir, tomogram_name, df):
         'AZ_distances_within_100': 100,
         'AZ_distances_within_40': 40,
         'AZ_distances_within_40_with_diameters': 40,
+        'AZ_distances_within_40_only_diameters': 40,
     }
 
     for filename, max_dist in thresholds.items():
-        file_path = os.path.join(output_dir, f"{filename}.csv")
+        file_path = os.path.join(output_dir, f"{filename}.xlsx")
         filtered_df = df if max_dist is None else df[df['distance'] <= max_dist]
 
         if filename == 'AZ_distances_within_40_with_diameters':
@@ -85,14 +86,19 @@ def save_filtered_dataframes(output_dir, tomogram_name, df):
                 f"{tomogram_name}_distance": filtered_df['distance'].values,
                 f"{tomogram_name}_diameter": filtered_df['diameter'].values
             })
+        elif filename == 'AZ_distances_within_40_only_diameters':
+            data = pd.DataFrame({
+                f"{tomogram_name}_diameter": filtered_df['diameter'].values
+            })
         else:
             data = pd.DataFrame({tomogram_name: filtered_df['distance'].values})
 
-        write_or_append_csv(file_path, data)
+        write_or_append_excel(file_path, data) 
+        
 
 def save_filtered_dataframes_with_seg_id(output_dir, tomogram_name, df):
     """
-    Saves segment data including seg_id into separate CSV files.
+    Saves segment data including seg_id into separate Excel files.
 
     Parameters:
         output_dir (str): Directory to save files.
@@ -105,14 +111,14 @@ def save_filtered_dataframes_with_seg_id(output_dir, tomogram_name, df):
         'AZ_distances_within_100_with_seg_id': 100,
         'AZ_distances_within_40_with_seg_id': 40,
         'AZ_distances_within_40_with_diameters_and_seg_id': 40,
+        'AZ_distances_within_40_only_diameters_and_seg_id': 40,
     }
 
+    with_segID_dir = os.path.join(output_dir, "with_segID")
+    os.makedirs(with_segID_dir, exist_ok=True)
+
     for filename, max_dist in thresholds.items():
-        #storing with seg ID data in subfolder
-        with_segID_dir = os.path.join(output_dir, "with_segID")
-        os.makedirs(with_segID_dir, exist_ok=True)
-        file_path = os.path.join(with_segID_dir, f"{filename}.csv")
-        
+        file_path = os.path.join(with_segID_dir, f"{filename}.xlsx")
         filtered_df = df if max_dist is None else df[df['distance'] <= max_dist]
 
         if filename == 'AZ_distances_within_40_with_diameters_and_seg_id':
@@ -121,17 +127,23 @@ def save_filtered_dataframes_with_seg_id(output_dir, tomogram_name, df):
                 f"{tomogram_name}_distance": filtered_df['distance'].values,
                 f"{tomogram_name}_diameter": filtered_df['diameter'].values
             })
+        elif filename == 'AZ_distances_within_40_only_diameters_and_seg_id':
+            data = pd.DataFrame({
+                f"{tomogram_name}_seg_id": filtered_df['seg_id'].values,
+                f"{tomogram_name}_diameter": filtered_df['diameter'].values
+            })
         else:
             data = pd.DataFrame({
                 f"{tomogram_name}_seg_id": filtered_df['seg_id'].values,
                 f"{tomogram_name}_distance": filtered_df['distance'].values
             })
 
-        write_or_append_csv(file_path, data)
+        write_or_append_excel(file_path, data) 
+        
 
 def run_store_results(input_path, analysis_output, sorted_list):
     """
-    Processes a single tomogram's sorted segment data and stores results into categorized CSV files.
+    Processes a single tomogram's sorted segment data and stores results into categorized Excel files.
 
     Parameters:
         input_path (str): Path to the input .h5 file.

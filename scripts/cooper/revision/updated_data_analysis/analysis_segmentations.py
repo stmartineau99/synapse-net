@@ -115,7 +115,7 @@ def compartment_pred(raw: np.ndarray, compartment_model: str, output_path: str =
                 print(f"Using existing compartment seg in {output_path}")
 
     if not use_existing_seg:
-        seg, pred = segment_compartments(input_volume=raw, model_path=compartment_model, verbose=False, return_predictions=True)
+        seg, pred = segment_compartments(input_volume=raw, model_path=compartment_model, verbose=False, return_predictions=True, boundary_threshold=0.9)
 
         if store and output_path:
             with h5py.File(output_path, "a") as f:
