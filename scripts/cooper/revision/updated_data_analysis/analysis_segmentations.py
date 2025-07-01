@@ -10,6 +10,7 @@ from synapse_net.inference.vesicles import segment_vesicles
 from synapse_net.inference.compartments import segment_compartments
 from synapse_net.inference.active_zone import segment_active_zone
 from synapse_net.inference.inference import get_model_path
+from synapse_net.ground_truth.az_evaluation import _get_presynaptic_mask
 
 
 def fill_and_filter_vesicles(vesicles: np.ndarray) -> np.ndarray:
@@ -130,7 +131,7 @@ def compartment_pred(raw: np.ndarray, compartment_model: str, output_path: str =
         else:
             print("Not storing compartment predictions")
 
-    return seg
+    return seg, pred
 
 
 def AZ_pred(raw: np.ndarray, AZ_model: str, output_path: str = None, store: bool = False) -> np.ndarray:
@@ -179,7 +180,7 @@ def AZ_pred(raw: np.ndarray, AZ_model: str, output_path: str = None, store: bool
     return seg
 
 
-def filter_presynaptic_SV(sv_seg: np.ndarray, compartment_seg: np.ndarray, output_path: str = None,
+def filter_presynaptic_SV(sv_seg: np.ndarray, compartment_seg: np.ndarray, compartment_pred: np.ndarray, output_path: str = None,
                           store: bool = False, input_path: str = None) -> np.ndarray:
     """
     Filters synaptic vesicle segmentation to retain only vesicles in the presynaptic region.
@@ -200,14 +201,16 @@ def filter_presynaptic_SV(sv_seg: np.ndarray, compartment_seg: np.ndarray, outpu
     def n_vesicles(mask, ves):
         return len(np.unique(ves[mask])) - 1
 
-    # Find the segment with most vesicles.
+    '''# Find the segment with most vesicles.
     props = regionprops(compartment_seg, intensity_image=vesicles_pp, extra_properties=[n_vesicles])
     compartment_ids = [prop.label for prop in props]
     vesicle_counts = [prop.n_vesicles for prop in props]
     if len(compartment_ids) == 0:
         mask = np.ones(compartment_seg.shape, dtype="bool")
     else:
-        mask = (compartment_seg == compartment_ids[np.argmax(vesicle_counts)]).astype("uint8")
+        mask = (compartment_seg == compartment_ids[np.argmax(vesicle_counts)]).astype("uint8")'''
+
+    mask = _get_presynaptic_mask(compartment_pred, vesicles_pp)
 
     # Filter all vesicles that are not in the mask.
     props = regionprops(vesicles_pp, mask)
@@ -274,13 +277,13 @@ def run_predictions(input_path: str, output_path: str = None, store: bool = Fals
     sv_seg = SV_pred(raw, SV_model, output_path, store)
 
     print("Running compartment prediction")
-    comp_seg = compartment_pred(raw, compartment_model, output_path, store)
+    comp_seg, comp_pred = compartment_pred(raw, compartment_model, output_path, store)
 
     print("Running AZ prediction")
     az_seg = AZ_pred(raw, AZ_model, output_path, store)
 
     print("Filtering the presynaptic SV")
-    presyn_SV_seg = filter_presynaptic_SV(sv_seg, comp_seg, output_path, store, input_path)
+    presyn_SV_seg = filter_presynaptic_SV(sv_seg, comp_seg, comp_pred, output_path, store, input_path)
 
     print("Done with predictions")
 
