@@ -80,7 +80,7 @@ def main():
         run_data_analysis(input_path, output_path, store, resolution, analysis_output)
 
     elif os.path.isdir(input_path):
-            h5_files = [file for file in os.listdir(input_path) if file.endswith(".h5")]
+            h5_files = sorted([file for file in os.listdir(input_path) if file.endswith(".h5")])
             for file in tqdm(h5_files, desc="Processing files"):
                 full_input_path = os.path.join(input_path, file)
                 output_path = os.path.join(output_folder, file) if output_folder else None

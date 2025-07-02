@@ -62,8 +62,8 @@ def SV_pred(raw: np.ndarray, SV_model: str, output_path: str = None, store: bool
 
     use_existing_seg = False
     #checking if segmentation is already in output path and if so, use it
-    if output_path:
-        with h5py.File(output_path, "a") as f:
+    if output_path and os.path.exists(output_path):
+        with h5py.File(output_path, "r") as f:
             if seg_key in f:
                 seg = f[seg_key][:]
                 use_existing_seg = True
@@ -108,10 +108,11 @@ def compartment_pred(raw: np.ndarray, compartment_model: str, output_path: str =
 
     use_existing_seg = False
     #checking if segmentation is already in output path and if so, use it
-    if output_path:
-        with h5py.File(output_path, "a") as f:
-            if seg_key in f:
+    if output_path and os.path.exists(output_path):
+        with h5py.File(output_path, "r") as f:
+            if seg_key in f and pred_key in f:
                 seg = f[seg_key][:]
+                pred = f[pred_key][:]
                 use_existing_seg = True
                 print(f"Using existing compartment seg in {output_path}")
 
@@ -152,8 +153,8 @@ def AZ_pred(raw: np.ndarray, AZ_model: str, output_path: str = None, store: bool
 
     use_existing_seg = False
     #checking if segmentation is already in output path and if so, use it
-    if output_path:
-        with h5py.File(output_path, "a") as f:
+    if output_path and os.path.exists(output_path):
+        with h5py.File(output_path, "r") as f:
             if seg_key in f:
                 seg = f[seg_key][:]
                 use_existing_seg = True
