@@ -9,7 +9,4 @@
 
 source ~/.bashrc
 conda activate synapse-net
-python /user/muth9/u12095/synapse-net/scripts/cooper/revision/updated_data_analysis/run_data_analysis.py \
- -i /mnt/lustre-emmy-hdd/projects/nim00007/data/synaptic-reconstruction/cooper/20241102_TOMO_DATA_Imig2014/final_Imig2014_seg_autoComp/SNAP25/ \
- -o /mnt/lustre-emmy-hdd/projects/nim00007/data/synaptic-reconstruction/cooper/20241102_TOMO_DATA_Imig2014/afterRevision_analysis/boundaryT0_9_constantins_presynapticFiltering/full_dataset --store \
- -s ./analysis_results/full_dataset
+python scripts/cooper/revision/surface_dice.py -i /mnt/ceph-hdd/cold/nim00007/AZ_prediction_new/endbulb_of_held/ -gt /mnt/ceph-hdd/cold/nim00007/new_AZ_train_data/endbulb_of_held/ -v 7

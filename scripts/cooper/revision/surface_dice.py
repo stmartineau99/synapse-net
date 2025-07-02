@@ -70,6 +70,7 @@ def collect_results(input_folder, gt_folder, version, check=False):
     results = []
     seg_key = f"predictions/az/seg_v{version}"
     gt_key = "/labels/az_merged"
+    input_folder_name = os.path.basename(os.path.normpath(input_folder))
 
     for fname in tqdm(os.listdir(input_folder), desc="Processing segmentations"):
         if not fname.endswith(".h5"):
@@ -84,16 +85,34 @@ def collect_results(input_folder, gt_folder, version, check=False):
 
         result = process_file(pred_path, gt_path, seg_key, gt_key, check)
         if result:
+            result["input_folder"] = input_folder_name
             results.append(result)
 
     return results
 
 
 def save_results(results, output_file):
-    """Save results as an Excel file."""
-    df = pd.DataFrame(results)
-    df.to_excel(output_file, index=False)
+    """Append results to an Excel file, updating rows with matching tomo_name and input_folder."""
+    new_df = pd.DataFrame(results)
+
+    if os.path.exists(output_file):
+        existing_df = pd.read_excel(output_file)
+
+        # Drop rows where tomo_name and input_folder match any in new_df
+        combined_df = existing_df[
+            ~existing_df.set_index(["tomo_name", "input_folder"]).index.isin(
+                new_df.set_index(["tomo_name", "input_folder"]).index
+            )
+        ]
+
+        # Append new data and reset index
+        final_df = pd.concat([combined_df, new_df], ignore_index=True)
+    else:
+        final_df = new_df
+
+    final_df.to_excel(output_file, index=False)
     print(f"Results saved to {output_file}")
+
 
 
 def main():
