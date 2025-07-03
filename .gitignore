@@ -16,3 +16,4 @@ synapse-net-models/
 scripts/portal/upscale_tomo.py
 analysis_results/
 scripts/cooper/revision/evaluation_results/
+scripts/cooper/revision/export_tif_to_h5.py

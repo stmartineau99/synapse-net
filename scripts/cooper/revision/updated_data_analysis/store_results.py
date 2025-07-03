@@ -73,20 +73,20 @@ def save_filtered_dataframes(output_dir, tomogram_name, df):
         'AZ_distances_within_200': 200,
         'AZ_distances_within_100': 100,
         'AZ_distances_within_40': 40,
-        'AZ_distances_within_40_with_diameters': 40,
-        'AZ_distances_within_40_only_diameters': 40,
+        'AZ_distances_within_100_with_diameters': 100,
+        'AZ_distances_within_100_only_diameters': 100,
     }
 
     for filename, max_dist in thresholds.items():
         file_path = os.path.join(output_dir, f"{filename}.xlsx")
         filtered_df = df if max_dist is None else df[df['distance'] <= max_dist]
 
-        if filename == 'AZ_distances_within_40_with_diameters':
+        if filename == 'AZ_distances_within_100_with_diameters':
             data = pd.DataFrame({
                 f"{tomogram_name}_distance": filtered_df['distance'].values,
                 f"{tomogram_name}_diameter": filtered_df['diameter'].values
             })
-        elif filename == 'AZ_distances_within_40_only_diameters':
+        elif filename == 'AZ_distances_within_100_only_diameters':
             data = pd.DataFrame({
                 f"{tomogram_name}_diameter": filtered_df['diameter'].values
             })
@@ -110,8 +110,8 @@ def save_filtered_dataframes_with_seg_id(output_dir, tomogram_name, df):
         'AZ_distances_within_200_with_seg_id': 200,
         'AZ_distances_within_100_with_seg_id': 100,
         'AZ_distances_within_40_with_seg_id': 40,
-        'AZ_distances_within_40_with_diameters_and_seg_id': 40,
-        'AZ_distances_within_40_only_diameters_and_seg_id': 40,
+        'AZ_distances_within_100_with_diameters_and_seg_id': 100,
+        'AZ_distances_within_100_only_diameters_and_seg_id': 100,
     }
 
     with_segID_dir = os.path.join(output_dir, "with_segID")
@@ -121,13 +121,13 @@ def save_filtered_dataframes_with_seg_id(output_dir, tomogram_name, df):
         file_path = os.path.join(with_segID_dir, f"{filename}.xlsx")
         filtered_df = df if max_dist is None else df[df['distance'] <= max_dist]
 
-        if filename == 'AZ_distances_within_40_with_diameters_and_seg_id':
+        if filename == 'AZ_distances_within_100_with_diameters_and_seg_id':
             data = pd.DataFrame({
                 f"{tomogram_name}_seg_id": filtered_df['seg_id'].values,
                 f"{tomogram_name}_distance": filtered_df['distance'].values,
                 f"{tomogram_name}_diameter": filtered_df['diameter'].values
             })
-        elif filename == 'AZ_distances_within_40_only_diameters_and_seg_id':
+        elif filename == 'AZ_distances_within_100_only_diameters_and_seg_id':
             data = pd.DataFrame({
                 f"{tomogram_name}_seg_id": filtered_df['seg_id'].values,
                 f"{tomogram_name}_diameter": filtered_df['diameter'].values
