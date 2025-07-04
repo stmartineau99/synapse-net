@@ -129,6 +129,7 @@ def collect_results(input_folder, gt_folder, version, check=False,
             continue
 
         pred_path = os.path.join(input_folder, fname)
+        print(pred_path)
         gt_path = os.path.join(gt_folder, fname)
 
         if not os.path.exists(gt_path):

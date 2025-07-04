@@ -10,6 +10,6 @@
 
 source ~/.bashrc
 conda activate synapse-net
-python /user/muth9/u12095/synapse-net/scripts/cooper/run_compartment_segmentation_h5.py \
- -i /mnt/ceph-hdd/cold/nim00007/new_AZ_train_data/stem_for_eval/20241019_Tomo-eval_PS_Synapse_36859_J1_66K_TS_CA3_PS_46_rec_2Kb1dawbp_crop.h5 \
- --data_ext .h5
+python /user/muth9/u12095/synapse-net/scripts/cooper/vesicle_segmentation_h5.py \
+ -i /mnt/ceph-hdd/cold/nim00007/new_AZ_train_data/stem_for_eval/ \
+ -o /mnt/ceph-hdd/cold/nim00007/new_AZ_train_data/stem_for_eval/
