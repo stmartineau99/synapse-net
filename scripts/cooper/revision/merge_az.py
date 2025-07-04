@@ -18,14 +18,18 @@ SKIP_MERGE = [
 
 
 # STEM CROPPED IS OFTEN TOO SMALL!
-def merge_az(name, version, check):
+def merge_az(name, version, check, in_path):
     split_folder = get_split_folder(version)
    
     if name == "stem_cropped":
         file_paths = glob(os.path.join("/mnt/ceph-hdd/cold/nim00007/new_AZ_train_data/stem_cropped", "*.h5"))
         file_names = [os.path.basename(path) for path in file_paths]
     else:
-        file_names = get_file_names(name, split_folder, split_names=["train", "val", "test"])
+        if in_path:
+            file_paths = glob(os.path.join(in_path, name, "*.h5"))
+            file_names = [os.path.basename(path) for path in file_paths]
+        else:
+            file_names = get_file_names(name, split_folder, split_names=["train", "val", "test"])
     seg_paths, gt_paths = get_paths(name, file_names)
 
     for seg_path, gt_path in zip(seg_paths, gt_paths):
@@ -79,7 +83,7 @@ def visualize_merge(args):
     for name in args.names:
         if "endbulb" in name:
             continue
-        merge_az(name, args.version, check=True)
+        merge_az(name, args.version, check=True, in_path=args.in_path)
 
 
 def copy_az(name, version):
@@ -101,7 +105,7 @@ def run_merge(args):
         if "endbulb" in name:
             copy_az(name, args.version)
         else:
-            merge_az(name, args.version, check=False)
+            merge_az(name, args.version, check=False, in_path= args.in_path)
 
 
 def main():
@@ -110,6 +114,7 @@ def main():
     parser.add_argument("--visualize", action="store_true")
     parser.add_argument("--names", nargs="+", default=ALL_NAMES + ["endbulb_of_held_cropped"])
     parser.add_argument("--version", "-v", type=int, default=4)
+    parser.add_argument("--in_path", "-i", default=None)
 
     args = parser.parse_args()
     if args.visualize:

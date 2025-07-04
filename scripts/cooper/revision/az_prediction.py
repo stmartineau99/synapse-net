@@ -54,10 +54,12 @@ def run_prediction(model, name, split_folder, version, split_names, in_path):
 
 
 def get_model(version):
-    assert version in (3, 4, 5, 7)
+    assert version in (3, 4, 5, 6, 7)
     split_folder = get_split_folder(version)
     if version == 3:
         model_path = os.path.join(split_folder, "checkpoints", "3D-AZ-model-TEM_STEM_ChemFix_wichmann-v3")
+    elif version ==6:
+        model_path = "/mnt/ceph-hdd/cold/nim00007/models/AZ/v6/"
     elif version == 7:
         model_path = "/mnt/lustre-emmy-hdd/usr/u12095/synapse_net/models/ConstantinAZ/checkpoints/v7/"
     else:
