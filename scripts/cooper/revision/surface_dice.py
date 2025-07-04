@@ -13,7 +13,7 @@ import pandas as pd
 from tqdm import tqdm
 import numpy as np
 from scipy.ndimage import label
-from skima
+from skimage.measure import regionprops
 
 try:
     from membrain_seg.segmentation.skeletonize import skeletonization
@@ -130,7 +130,7 @@ def collect_results(input_folder, gt_folder, version, check=False,
                     global_eval=False):
     results = []
     seg_key = f"predictions/az/seg_v{version}"
-    gt_key = "/labels/az_merged"
+    gt_key = "/labels/az_merged_v6"
     input_folder_name = os.path.basename(os.path.normpath(input_folder))
 
     for fname in tqdm(os.listdir(input_folder), desc="Processing segmentations"):

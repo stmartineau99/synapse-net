@@ -9,6 +9,5 @@
 
 source ~/.bashrc
 conda activate synapse-net
-python /user/muth9/u12095/synapse-net/scripts/cooper/revision/merge_az.py -v 6 \
- --names stem_for_eval \
- -i /mnt/ceph-hdd/cold/nim00007/new_AZ_train_data/
+python scripts/cooper/revision/surface_dice.py -i /mnt/ceph-hdd/cold/nim00007/AZ_prediction_new/endbulb_of_held/ \
+ -gt /mnt/ceph-hdd/cold/nim00007/new_AZ_train_data/endbulb_of_held/ -v 7 --global_eval
