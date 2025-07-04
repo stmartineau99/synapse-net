@@ -1,7 +1,8 @@
 import sys
 import os
 
-# Add membrain-seg to Python path
+# Add membrain-seg to Python path 
+#Delete before last commit
 MEMBRAIN_SEG_PATH = "/user/muth9/u12095/membrain-seg/src"
 if MEMBRAIN_SEG_PATH not in sys.path:
     sys.path.insert(0, MEMBRAIN_SEG_PATH)
@@ -12,10 +13,14 @@ import pandas as pd
 from tqdm import tqdm
 import numpy as np
 from scipy.ndimage import label
-from skimage.measure import regionprops
+from skima
 
-from membrain_seg.segmentation.skeletonize import skeletonization
-from membrain_seg.benchmark.metrics import masked_surface_dice
+try:
+    from membrain_seg.segmentation.skeletonize import skeletonization
+    from membrain_seg.benchmark.metrics import masked_surface_dice
+except ImportError:
+    skeletonization=None
+    masked_surface_dice=None
 
 
 def load_segmentation(file_path, key):
@@ -25,6 +30,10 @@ def load_segmentation(file_path, key):
 
 
 def evaluate_surface_dice(pred, gt, raw, check):
+    if skeletonization is None:
+        print("Error! Install membrain_seg. For more information check out https://teamtomo.org/membrain-seg/installation/ ")
+        raise RuntimeError
+    
     gt_skeleton = skeletonization(gt == 1, batch_size=100000)
     pred_skeleton = skeletonization(pred, batch_size=100000)
     mask = gt != 2

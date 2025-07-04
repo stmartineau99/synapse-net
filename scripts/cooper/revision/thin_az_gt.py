@@ -34,7 +34,7 @@ def run_az_thinning(folder=ROOT, out_path=OUTPUT_ROOT):
             az = f_in["labels/az"][:]
 
             az_thin = thin_az(
-                az, boundary_map=boundary_pred, vesicles=vesicles, tomo=tomo, presyn_dist=8, check=True,
+                az, boundary_map=boundary_pred, vesicles=vesicles, tomo=tomo, presyn_dist=8, check=False,
                 min_thinning_size=2500,
             )
 
