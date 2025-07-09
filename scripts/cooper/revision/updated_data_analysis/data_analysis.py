@@ -1,3 +1,7 @@
+import numpy as np
+from scipy.ndimage import label
+from skimage.measure import regionprops
+
 from synapse_net.distance_measurements import measure_segmentation_to_object_distances
 from synapse_net.imod.to_imod import convert_segmentation_to_spheres
 
@@ -14,7 +18,23 @@ def calc_AZ_SV_distance(vesicles, az, resolution):
     Returns:
         list of dict: Each dict contains 'seg_id' and 'distance', sorted by seg_id.
     """
-    distances, _, _, seg_ids = measure_segmentation_to_object_distances(vesicles, az, resolution=resolution)
+
+    # Apply connected components to az
+    labeled_az, num_features = label(az)
+    
+    if num_features == 0:
+        raise ValueError("No connected components found in active zone segmentation.")
+
+    # Measure the size of each component
+    props = regionprops(labeled_az)
+    largest_region = max(props, key=lambda r: r.area)
+
+    # Create a mask for the largest component only
+    largest_az_mask = labeled_az == largest_region.label
+
+    # Call the distance function with the filtered AZ mask
+    distances, _, _, seg_ids = measure_segmentation_to_object_distances(vesicles, largest_az_mask, resolution=resolution)
+
 
     # Exclude seg_id == 0
     dist_list = [
