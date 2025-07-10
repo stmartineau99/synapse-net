@@ -1,4 +1,5 @@
 import time
+import warnings
 from typing import Dict, List, Optional, Tuple, Union
 
 import elf.parallel as parallel
@@ -8,6 +9,7 @@ import torch
 
 from synapse_net.inference.util import apply_size_filter, get_prediction, _Scaler
 from synapse_net.inference.postprocessing.vesicles import filter_border_objects, filter_border_vesicles
+from skimage.segmentation import relabel_sequential
 
 
 def distance_based_vesicle_segmentation(
@@ -148,6 +150,10 @@ def segment_vesicles(
         return_predictions: Whether to return the predictions (foreground, boundaries) alongside the segmentation.
         scale: The scale factor to use for rescaling the input volume before prediction.
         exclude_boundary: Whether to exclude vesicles that touch the upper / lower border in z.
+        exclude_boundary_vesicles: Whether to exlude vesicles on the boundary that have less than the full diameter
+            inside of the volume. This is an alternative to post-processing with `exclude_boundary` that filters
+            out less vesicles at the boundary and is better suited for volumes with small context in z.
+            If `exclude_boundary` is also set to True, then this option will have no effect.
         mask: An optional mask that is used to restrict the segmentation.
 
     Returns:
@@ -181,26 +187,23 @@ def segment_vesicles(
             foreground, boundaries, verbose=verbose, min_size=min_size, **kwargs
         )
 
-    if exclude_boundary:
+    if exclude_boundary and exclude_boundary_vesicles:
+        warnings.warn(
+            "You have set both 'exclude_boundary' and 'exclude_boundary_vesicles' to True."
+            "The 'exclude_boundary_vesicles' option will have no effect."
+        )
         seg = filter_border_objects(seg)
-    if exclude_boundary_vesicles:
+
+    elif exclude_boundary:
+        seg = filter_border_objects(seg)
+
+    elif exclude_boundary_vesicles:
+        # Filter the vesicles that are at the z-border with less than their full diameter.
         seg_ids = filter_border_vesicles(seg)
-        # Step 1: Zero out everything not in seg_ids
+
+        # Remove everything not in seg ids and relable the remaining IDs consecutively.
         seg[~np.isin(seg, seg_ids)] = 0
-
-        # Step 2: Relabel remaining IDs to be consecutive starting from 1
-        unique_ids = np.unique(seg)
-        unique_ids = unique_ids[unique_ids != 0]  # Exclude background (0)
-
-        label_map = {old_label: new_label for new_label, old_label in enumerate(unique_ids, start=1)}
-
-        # Apply relabeling using a temp array (to avoid large ints in-place)
-        new_seg = np.zeros_like(seg, dtype=np.int32)
-        for old_label, new_label in label_map.items():
-            new_seg[seg == old_label] = new_label
-
-        # Final step: replace original seg with relabelled and casted version
-        seg = new_seg
+        seg = relabel_sequential(seg)[0]
 
     seg = scaler.rescale_output(seg, is_segmentation=True)
 
