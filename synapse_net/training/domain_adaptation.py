@@ -1,12 +1,20 @@
 import os
+import tempfile
+from glob import glob
+from pathlib import Path
 from typing import Optional, Tuple
 
+import mrcfile
 import torch
 import torch_em
 import torch_em.self_training as self_training
+from elf.io import open_file
+from sklearn.model_selection import train_test_split
 
 from .semisupervised_training import get_unsupervised_loader
 from .supervised_training import get_2d_model, get_3d_model, get_supervised_loader, _determine_ndim
+from ..inference.inference import get_model_path, compute_scale_from_voxel_size
+from ..inference.util import _Scaler
 
 
 def mean_teacher_adaptation(
@@ -91,7 +99,7 @@ def mean_teacher_adaptation(
         if os.path.isdir(source_checkpoint):
             model = torch_em.util.load_model(source_checkpoint)
         else:
-            model = torch.load(source_checkpoint)
+            model = torch.load(source_checkpoint, weights_only=False)
         reinit_teacher = False
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
@@ -148,3 +156,109 @@ def mean_teacher_adaptation(
         sampler=sampler,
     )
     trainer.fit(n_iterations)
+
+
+# TODO patch shapes for other models
+PATCH_SHAPES = {
+    "vesicles_3d": [48, 256, 256],
+}
+"""@private
+"""
+
+
+def _get_paths(input_folder, pattern, resize_training_data, model_name, tmp_dir):
+    files = sorted(glob(os.path.join(input_folder, "**", pattern), recursive=True))
+    if len(files) == 0:
+        raise ValueError(f"Could not load any files from {input_folder} with pattern {pattern}")
+
+    val_fraction = 0.15
+
+    # Heuristic: if we have less then 4 files then we crop a part of the volumes for validation.
+    # And resave the volumes.
+    resave_val_crops = len(files) < 4
+
+    # We only resave the data if we resave val crops or resize the training data
+    resave_data = resave_val_crops or resize_training_data
+    if not resave_data:
+        train_paths, val_paths = train_test_split(files, test_size=val_fraction)
+        return train_paths, val_paths
+
+    train_paths, val_paths = [], []
+    for file_path in files:
+        file_name = os.path.basename(file_path)
+        data = open_file(file_path, mode="r")["data"][:]
+
+        if resize_training_data:
+            with mrcfile.open(file_path) as f:
+                voxel_size = f.voxel_size
+            voxel_size = {ax: vox_size / 10.0 for ax, vox_size in zip("xyz", voxel_size.item())}
+            scale = compute_scale_from_voxel_size(voxel_size, model_name)
+            scaler = _Scaler(scale, verbose=False)
+            data = scaler.sale_input(data)
+
+        if resave_val_crops:
+            n_slices = data.shape[0]
+            val_slice = int((1.0 - val_fraction) * n_slices)
+            train_data, val_data = data[:val_slice], data[val_slice:]
+
+            train_path = os.path.join(tmp_dir, Path(file_name).with_suffix(".h5")).replace(".h5", "_train.h5")
+            with open_file(train_path, mode="w") as f:
+                f.create_dataset("data", data=train_data, compression="lzf")
+            train_paths.append(train_path)
+
+            val_path = os.path.join(tmp_dir, Path(file_name).with_suffix(".h5")).replace(".h5", "_val.h5")
+            with open_file(val_path, mode="w") as f:
+                f.create_dataset("data", data=val_data, compression="lzf")
+            val_paths.append(val_path)
+
+        else:
+            output_path = os.path.join(tmp_dir, Path(file_name).with_suffix(".h5"))
+            with open_file(output_path, mode="w") as f:
+                f.create_dataset("data", data=data, compression="lzf")
+            train_paths.append(output_path)
+
+    if not resave_val_crops:
+        train_paths, val_paths = train_test_split(train_paths, test_size=val_fraction)
+
+    return train_paths, val_paths
+
+
+def _parse_patch_shape(patch_shape, model_name):
+    if patch_shape is None:
+        patch_shape = PATCH_SHAPES[model_name]
+    return patch_shape
+
+
+def main():
+    """@private
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=""
+    )
+    parser.add_argument("--name", "-n", required=True)
+    parser.add_argument("--input", "-i", required=True)
+    parser.add_argument("--pattern", "-p", default="*.mrc")
+    parser.add_argument("--source_model", default="vesicles_3d")
+    parser.add_argument("--resize_training_data", action="store_true")
+    parser.add_argument("--n_iterations", type=int, default=int(1e4))
+    parser.add_argument("--patch_shape", nargs="+", type=int)
+    args = parser.parse_args()
+
+    source_checkpoint = get_model_path(args.source_model)
+    patch_shape = _parse_patch_shape(args.patch_shape, args.source_model)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        unsupervised_train_paths, unsupervised_val_paths = _get_paths(
+            args.input, args.pattern, args.resize_training_data, args.source_model, tmp_dir
+        )
+
+        mean_teacher_adaptation(
+            name=args.name,
+            unsupervised_train_paths=unsupervised_train_paths,
+            unsupervised_val_paths=unsupervised_val_paths,
+            patch_shape=patch_shape,
+            source_checkpoint=source_checkpoint,
+            raw_key="data",
+            n_iterations=args.n_iterations,
+        )

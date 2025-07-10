@@ -65,7 +65,7 @@ def get_split_folder(version):
     if version == 3:
         split_folder = "splits"
     elif version == 6:
-        split_folder= "/mnt/ceph-hdd/cold/nim00007/new_AZ_train_data/splits"
+        split_folder = "/mnt/ceph-hdd/cold/nim00007/new_AZ_train_data/splits"
     else:
         split_folder = "models_az_thin"
     return split_folder

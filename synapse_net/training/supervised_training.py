@@ -307,9 +307,9 @@ def supervised_training(
 
 
 def _parse_input_folder(folder, pattern, key):
-    files = sorted(glob(os.path.join(folder, "**", pattern)))
+    files = sorted(glob(os.path.join(folder, "**", pattern), recursive=True))
     # Get all file extensions (general wild-cards may pick up files with multiple extensions).
-    extensions = [os.path.splitext(ff)[1] for ff in files]
+    extensions = list(set([os.path.splitext(ff)[1] for ff in files]))
 
     # If we have more than 1 file extension we just use the key that was passed,
     # as it is unclear how to derive a consistent key.
@@ -372,7 +372,7 @@ def main():
     parser.add_argument("-p", "--patch_shape", nargs=3, type=int, help="The patch shape for training.")
 
     # Folders with training data, containing raw/image data and labels.
-    parser.add_argument("--i", "--train_folder", required=True, help="The input folder with the training image data.")
+    parser.add_argument("-i", "--train_folder", required=True, help="The input folder with the training image data.")
     parser.add_argument("--image_file_pattern", default="*",
                         help="The pattern for selecting image files. For example, '*.mrc' to select all mrc files.")
     parser.add_argument("--raw_key",
@@ -394,6 +394,7 @@ def main():
     parser.add_argument("--n_samples_train", type=int, help="The number of samples per epoch for training. If not given will be derived from the data size.")  # noqa
     parser.add_argument("--n_samples_val", type=int, help="The number of samples per epoch for validation. If not given will be derived from the data size.")  # noqa
     parser.add_argument("--val_fraction", type=float, default=0.15, help="The fraction of the data to use for validation. This has no effect if 'val_folder' and 'val_label_folder' were passed.")  # noqa
+    parser.add_argument("--check", action="store_true", help="Visualize samples from the data loaders to ensure correct data instead of running training.")  # noqa
     args = parser.parse_args()
 
     train_image_paths, train_label_paths, val_image_paths, val_label_paths, raw_key, label_key =\
