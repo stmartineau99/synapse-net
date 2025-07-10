@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 from synapse_net.inference.util import apply_size_filter, get_prediction, _Scaler
-from synapse_net.inference.postprocessing.vesicles import filter_border_objects
+from synapse_net.inference.postprocessing.vesicles import filter_border_objects, filter_border_vesicles
 
 
 def distance_based_vesicle_segmentation(
@@ -132,6 +132,7 @@ def segment_vesicles(
     return_predictions: bool = False,
     scale: Optional[List[float]] = None,
     exclude_boundary: bool = False,
+    exclude_boundary_vesicles: bool = False,
     mask: Optional[np.ndarray] = None,
 ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
     """Segment vesicles in an input volume or image.
@@ -182,6 +183,25 @@ def segment_vesicles(
 
     if exclude_boundary:
         seg = filter_border_objects(seg)
+    if exclude_boundary_vesicles:
+        seg_ids = filter_border_vesicles(seg)
+        # Step 1: Zero out everything not in seg_ids
+        seg[~np.isin(seg, seg_ids)] = 0
+
+        # Step 2: Relabel remaining IDs to be consecutive starting from 1
+        unique_ids = np.unique(seg)
+        unique_ids = unique_ids[unique_ids != 0]  # Exclude background (0)
+
+        label_map = {old_label: new_label for new_label, old_label in enumerate(unique_ids, start=1)}
+
+        # Apply relabeling using a temp array (to avoid large ints in-place)
+        new_seg = np.zeros_like(seg, dtype=np.int32)
+        for old_label, new_label in label_map.items():
+            new_seg[seg == old_label] = new_label
+
+        # Final step: replace original seg with relabelled and casted version
+        seg = new_seg
+
     seg = scaler.rescale_output(seg, is_segmentation=True)
 
     if return_predictions:

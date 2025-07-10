@@ -71,7 +71,7 @@ def SV_pred(raw: np.ndarray, SV_model: str, output_path: str = None, store: bool
 
     if not use_existing_seg:
         #Excluding boundary SV, because they would also not be used in the manual annotation
-        seg, pred = segment_vesicles(input_volume=raw, model_path=SV_model, exclude_boundary=True, verbose=False, return_predictions=True)
+        seg, pred = segment_vesicles(input_volume=raw, model_path=SV_model, exclude_boundary_vesicles=True, verbose=False, return_predictions=True)
 
         if store and output_path:
             with h5py.File(output_path, "a") as f:
