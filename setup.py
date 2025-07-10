@@ -16,6 +16,7 @@ setup(
             "synapse_net.run_segmentation = synapse_net.tools.cli:segmentation_cli",
             "synapse_net.export_to_imod_points = synapse_net.tools.cli:imod_point_cli",
             "synapse_net.export_to_imod_objects = synapse_net.tools.cli:imod_object_cli",
+            "synapse_net.run_supervised_training = synapse_net.training.supervised_training:main",
         ],
         "napari.manifest": [
             "synapse_net = synapse_net:napari.yaml",
