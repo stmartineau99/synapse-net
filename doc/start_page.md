@@ -147,10 +147,12 @@ For more options supported by the IMOD exports, please run `synapse_net.export_t
 
 > Note: to use these commands you have to install IMOD.
 
+SynapseNet also provides two CLI comamnds for training models, one for supervised network training (see [Supervised Training](#supervised-training) for details) and one for domain adaptation (see [Domain Adaptation](#domain-adaptation) for details).
+
 
 ## Python Library
 
-Using the `synapse_net` python library offers the most flexibility for using the SynapseNet functionality.
+Using the `synapse_net` python library offers the most flexibility for using SynapseNet's functionality.
 You can find an example analysis pipeline implemented with SynapseNet [here](https://github.com/computational-cell-analytics/synapse-net/blob/main/examples/analysis_pipeline.py).
 
 We offer different functionality for segmenting and analyzing synapses in electron microscopy:
@@ -161,17 +163,32 @@ We offer different functionality for segmenting and analyzing synapses in electr
 
 Please refer to the module documentation below for a full overview of our library's functionality.
 
+### Supervised Training
+
+SynapseNet provides functionality for training a UNet for segmentation tasks using supervised learning.
+In this case, you have to provide data **and** (manual) annotations for the structure(s) you want to segment.
+This functionality is implemented in `synapse_net.training.supervised_training`. You can find an example script that shows how to use it [here](https://github.com/computational-cell-analytics/synapse-net/blob/main/examples/network_training.py).
+
+We also provide a command line function to run supervised training: `synapse_net.run_supervised_training`. Run
+```bash
+synapse_net.run_supervised_training -h
+```
+for more information and instructions on how to use it.
+
 ### Domain Adaptation
 
-We provide functionality for domain adaptation. It implements a special form of neural network training that can improve segmentation for data from a different condition (e.g. different sample preparation, electron microscopy technique or different specimen), **without requiring additional annotated structures**.
+SynapseNet provides functionality for (unsupervised) domain adaptation.
+This functionality is implemented through a student-teacher training approach that can improve segmentation for data from a different condition (for example different sample preparation, imaging technique, or different specimen), **without requiring additional annotated structures**.
 Domain adaptation is implemented in `synapse_net.training.domain_adaptation`. You can find an example script that shows how to use it [here](https://github.com/computational-cell-analytics/synapse-net/blob/main/examples/domain_adaptation.py).
 
-> Note: Domain adaptation only works if the initial model you adapt already finds some of the structures in the data from a new condition. If it does not work you will have to train a network on annotated data.
+We also provide a command line function to run domain adaptation: `synapse_net.run_domain_adaptation`. Run
+```bash
+synapse_net.run_domain_adaptation -h
+```
+for more information and instructions on how to use it.
 
-### Network Training
+> Note: Domain adaptation only works if the initial model already finds some of the structures in the data from a new condition. If it does not work you will have to train a network on annotated data.
 
-We also provide functionality for 'regular' neural network training. In this case, you have to provide data **and** manual annotations for the structure(s) you want to segment.
-This functionality is implemented in `synapse_net.training.supervised_training`. You can find an example script that shows how to use it [here](https://github.com/computational-cell-analytics/synapse-net/blob/main/examples/network_training.py).
 
 ## Segmentation for the CryoET Data Portal
 
@@ -179,3 +196,29 @@ We have published segmentation results for tomograms of synapses stored in the [
 - [CZCDP-10330](https://cryoetdataportal.czscience.com/depositions/10330): Contains synaptic vesicle segmentations for over 50 tomograms of synaptosomes. The segmentations were made with a model domain adapted to the synaptosome tomograms.
 
 The scripts for the submissions can be found in [scripts/cryo/cryo-et-portal](https://github.com/computational-cell-analytics/synapse-net/tree/main/scripts/cryo/cryo-et-portal).
+
+
+## Community Data Submission
+
+We are looking to extend and improve the SynapseNet models by training on more annotated data from electron tomography or (volume) electron microscopy.
+For this, we plan to collect data from community submissions.
+
+If you are using SynapseNet for a task where it does not perform well, or if you would like to use it for a new segmentation task not offered by it, and have annotations for your data, then you can submit this data to us, so that we can use it to train our next version of improved models.
+To do this, please create an [issue on github](https://github.com/computational-cell-analytics/synapse-net/issues) and:
+- Use a title "Data submission: ..." ("..." should be a title for your data, e.g. "smooth ER in electron tomography")
+- Briefly describe your data and add an image that shows the microscopy data and the segmentation masks you have.
+- Make sure to describe:
+    - The imaging modality and the structure(s) that you have segmented.
+    - How many images and annotations you have / can submit and how you have created the annotations.
+        - You should submit at least 5 images or crops and 20 annotated objects. If you are unsure if you have enough data please go ahead and create the issue / post and we can discuss the details.
+    - Which data-format your images and annotations are stored in. We recommend using either `tif`, `mrc`, or `ome.zarr` files.
+- Please indicate that you are willing to share the data for training purpose (see also next paragraph).
+
+Once you have created the post / issue, we will check if your data is suitable for submission or discuss with you how it could be extended to be suitable. Then:
+- We will share an agreement for data sharing. You can find **a draft** [here](https://docs.google.com/document/d/1vf5Efp5EJcS1ivuWM4f3pO5kBqEZfJcXucXL5ot0eqg/edit?usp=sharing).
+- You will be able to choose how you want to submit / publish your data.
+    - Share it under a CC0 license. In this case, we will use the data for re-training and also make it publicly available as soon as the next model versions become available.
+    - Share it for training with the option to publish it later. For example, if your data is unpublished and you want to only published once the respective publication is available. In this case, we will use the data for re-training, but not make it freely available yet. We will check with you peridiodically to see if your data can now be published.
+    - Share it for training only. In this case, we will re-train the model on it, but not make it publicly available.
+- We encourage you to choose the first option (making the data available under CC0).
+- We will then send you a link to upload your data, after you have agreed to these terms.

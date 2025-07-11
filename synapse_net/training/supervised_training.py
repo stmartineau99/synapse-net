@@ -1,7 +1,10 @@
+import os
+from glob import glob
 from typing import Optional, Tuple
 
 import torch
 import torch_em
+from sklearn.model_selection import train_test_split
 from torch_em.model import AnisotropicUNet, UNet2d
 
 
@@ -95,6 +98,7 @@ def get_supervised_loader(
     sampler: Optional[callable] = None,
     ignore_label: Optional[int] = None,
     label_transform: Optional[callable] = None,
+    label_paths: Optional[Tuple[str]] = None,
     **loader_kwargs,
 ) -> torch.utils.data.DataLoader:
     """Get a dataloader for supervised segmentation training.
@@ -118,6 +122,8 @@ def get_supervised_loader(
             ignored in the loss computation. By default this option is not used.
         label_transform: Label transform that is applied to the segmentation to compute the targets.
             If no label transform is passed (the default) a boundary transform is used.
+        label_paths: Optional paths containing the labels / annotations for training.
+            If not given, the labels are expected to be contained in the `data_paths`.
         loader_kwargs: Additional keyword arguments for the dataloader.
 
     Returns:
@@ -155,9 +161,14 @@ def get_supervised_loader(
     if sampler is None:
         sampler = torch_em.data.sampler.MinInstanceSampler(min_num_instances=4)
 
+    if label_paths is None:
+        label_paths = data_paths
+    elif len(label_paths) != len(data_paths):
+        raise ValueError(f"Data paths and label paths don't match: {len(data_paths)} != {len(label_paths)}")
+
     loader = torch_em.default_segmentation_loader(
         data_paths, raw_key,
-        data_paths, label_key, sampler=sampler,
+        label_paths, label_key, sampler=sampler,
         batch_size=batch_size, patch_shape=patch_shape, ndim=ndim,
         is_seg_dataset=True, label_transform=label_transform, transform=transform,
         num_workers=num_workers, shuffle=shuffle, n_samples=n_samples,
@@ -177,6 +188,8 @@ def supervised_training(
     batch_size: int = 1,
     lr: float = 1e-4,
     n_iterations: int = int(1e5),
+    train_label_paths: Optional[Tuple[str]] = None,
+    val_label_paths: Optional[Tuple[str]] = None,
     train_rois: Optional[Tuple[Tuple[slice]]] = None,
     val_rois: Optional[Tuple[Tuple[slice]]] = None,
     sampler: Optional[callable] = None,
@@ -210,6 +223,10 @@ def supervised_training(
         batch_size: The batch size for training.
         lr: The initial learning rate.
         n_iterations: The number of iterations to train for.
+        train_label_paths: Optional paths containing the label data for training.
+            If not given, the labels are expected to be part of `train_paths`.
+        val_label_paths: Optional paths containing the label data for validation.
+            If not given, the labels are expected to be part of `val_paths`.
         train_rois: Optional region of interests for training.
         val_rois: Optional region of interests for validation.
         sampler: Optional sampler for selecting blocks for training.
@@ -231,11 +248,11 @@ def supervised_training(
     train_loader = get_supervised_loader(train_paths, raw_key, label_key, patch_shape, batch_size,
                                          n_samples=n_samples_train, rois=train_rois, sampler=sampler,
                                          ignore_label=ignore_label, label_transform=label_transform,
-                                         **loader_kwargs)
+                                         label_paths=train_label_paths, **loader_kwargs)
     val_loader = get_supervised_loader(val_paths, raw_key, label_key, patch_shape, batch_size,
                                        n_samples=n_samples_val, rois=val_rois, sampler=sampler,
                                        ignore_label=ignore_label, label_transform=label_transform,
-                                       **loader_kwargs)
+                                       label_paths=val_label_paths, **loader_kwargs)
 
     if check:
         from torch_em.util.debug import check_loader
@@ -287,3 +304,116 @@ def supervised_training(
         metric=metric,
     )
     trainer.fit(n_iterations)
+
+
+def _derive_key_from_files(files, key):
+    # Get all file extensions (general wild-cards may pick up files with multiple extensions).
+    extensions = list(set([os.path.splitext(ff)[1] for ff in files]))
+
+    # If we have more than 1 file extension we just use the key that was passed,
+    # as it is unclear how to derive a consistent key.
+    if len(extensions) > 1:
+        return files, key
+
+    ext = extensions[0]
+    extension_to_key = {".tif": None, ".mrc": "data", ".rec": "data"}
+
+    # Derive the key from the extension if the key is None.
+    if key is None and ext in extension_to_key:
+        key = extension_to_key[ext]
+    # If the key is None and can't be derived raise an error.
+    elif key is None and ext not in extension_to_key:
+        raise ValueError(
+            f"You have not passed a key for the data in {ext} format, for which the key cannot be derived."
+        )
+    # If the key was passed and doesn't match the extension raise an error.
+    elif key is not None and ext in extension_to_key and key != extension_to_key[ext]:
+        raise ValueError(
+            f"The expected key {extension_to_key[ext]} for format {ext} did not match the passed key {key}."
+        )
+    return files, key
+
+
+def _parse_input_folder(folder, pattern, key):
+    files = sorted(glob(os.path.join(folder, "**", pattern), recursive=True))
+    return _derive_key_from_files(files, key)
+
+
+def _parse_input_files(args):
+    train_image_paths, raw_key = _parse_input_folder(args.train_folder, args.image_file_pattern, args.raw_key)
+    train_label_paths, label_key = _parse_input_folder(args.label_folder, args.label_file_pattern, args.label_key)
+    if len(train_image_paths) != len(train_label_paths):
+        raise ValueError(
+            f"The image and label paths parsed from {args.train_folder} and {args.label_folder} don't match."
+            f"The image folder contains {len(train_image_paths)}, the label folder contains {len(train_label_paths)}."
+        )
+
+    if args.val_folder is None:
+        if args.val_label_folder is not None:
+            raise ValueError("You have passed a val_label_folder, but not a val_folder.")
+        train_image_paths, val_image_paths, train_label_paths, val_label_paths = train_test_split(
+            train_image_paths, train_label_paths, test_size=args.val_fraction, random_state=42
+        )
+    else:
+        if args.val_label_folder is None:
+            raise ValueError("You have passed a val_folder, but not a val_label_folder.")
+        val_image_paths = _parse_input_folder(args.val_image_folder, args.image_file_pattern, raw_key)
+        val_label_paths = _parse_input_folder(args.val_label_folder, args.label_file_pattern, label_key)
+
+    return train_image_paths, train_label_paths, val_image_paths, val_label_paths, raw_key, label_key
+
+
+# TODO enable initialization with a pre-trained model.
+def main():
+    """@private
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Train a model for foreground and boundary segmentation via supervised learning.\n\n"
+        "You can use this function to train a model for vesicle segmentation, or another segmentation task, like this:\n"  # noqa
+        "synapse_net.run_supervised_training -n my_model -i /path/to/images -l /path/to/labels --patch_shape 32 192 192\n"  # noqa
+        "The trained model will be saved in the folder 'checkpoints/my_model' (or whichever name you pass to the '-n' argument)."  # noqa
+        "You can then use this model for segmentation with the SynapseNet GUI or CLI. "
+        "Check out the information below for details on the arguments of this function.",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument("-n", "--name", required=True, help="The name of the model to be trained.")
+    parser.add_argument("-p", "--patch_shape", nargs=3, type=int, help="The patch shape for training.")
+
+    # Folders with training data, containing raw/image data and labels.
+    parser.add_argument("-i", "--train_folder", required=True, help="The input folder with the training image data.")
+    parser.add_argument("--image_file_pattern", default="*",
+                        help="The pattern for selecting image files. For example, '*.mrc' to select all mrc files.")
+    parser.add_argument("--raw_key",
+                        help="The internal path for the raw data. If not given, will be determined based on the file extension.")  # noqa
+    parser.add_argument("-l", "--label_folder", required=True, help="The input folder with the training labels.")
+    parser.add_argument("--label_file_pattern", default="*",
+                        help="The pattern for selecting label files. For example, '*.tif' to select all tif files.")
+    parser.add_argument("--label_key",
+                        help="The internal path for the label data. If not given, will be determined based on the file extension.")  # noqa
+
+    # Optional folders with validation data. If not given the training data is split into train/val.
+    parser.add_argument("--val_folder",
+                        help="The input folder with the validation data. If not given the training data will be split for validation")  # noqa
+    parser.add_argument("--val_label_folder",
+                        help="The input folder with the validation labels. If not given the training data will be split for validation.")  # noqa
+
+    # More optional argument:
+    parser.add_argument("--batch_size", type=int, default=1, help="The batch size for training.")
+    parser.add_argument("--n_samples_train", type=int, help="The number of samples per epoch for training. If not given will be derived from the data size.")  # noqa
+    parser.add_argument("--n_samples_val", type=int, help="The number of samples per epoch for validation. If not given will be derived from the data size.")  # noqa
+    parser.add_argument("--val_fraction", type=float, default=0.15, help="The fraction of the data to use for validation. This has no effect if 'val_folder' and 'val_label_folder' were passed.")  # noqa
+    parser.add_argument("--check", action="store_true", help="Visualize samples from the data loaders to ensure correct data instead of running training.")  # noqa
+    args = parser.parse_args()
+
+    train_image_paths, train_label_paths, val_image_paths, val_label_paths, raw_key, label_key =\
+        _parse_input_files(args)
+
+    supervised_training(
+        name=args.name, train_paths=train_image_paths, val_paths=val_image_paths,
+        train_label_paths=train_label_paths, val_label_paths=val_label_paths,
+        raw_key=raw_key, label_key=label_key, patch_shape=args.patch_shape, batch_size=args.batch_size,
+        n_samples_train=args.n_samples_train, n_samples_val=args.n_samples_val,
+        check=args.check,
+    )

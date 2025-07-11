@@ -24,7 +24,7 @@ def run_prediction(model, name, split_folder, version, split_names, in_path):
 
     for fname in tqdm(file_names):
         if in_path:
-            input_path=os.path.join(in_path, name, fname)
+            input_path = os.path.join(in_path, name, fname)
         else:
             input_path = os.path.join(INPUT_ROOT, name, fname)
         print(f"segmenting {input_path}")
@@ -50,7 +50,6 @@ def run_prediction(model, name, split_folder, version, split_names, in_path):
                 print(f"{output_key_seg} already saved")
             else:
                 f.create_dataset(output_key_seg, data=seg, compression="lzf")
-                
 
 
 def get_model(version):
@@ -58,7 +57,7 @@ def get_model(version):
     split_folder = get_split_folder(version)
     if version == 3:
         model_path = os.path.join(split_folder, "checkpoints", "3D-AZ-model-TEM_STEM_ChemFix_wichmann-v3")
-    elif version ==6:
+    elif version == 6:
         model_path = "/mnt/ceph-hdd/cold/nim00007/models/AZ/v6/"
     elif version == 7:
         model_path = "/mnt/lustre-emmy-hdd/usr/u12095/synapse_net/models/ConstantinAZ/checkpoints/v7/"
@@ -79,7 +78,7 @@ def main():
     args = parser.parse_args()
 
     if args.model_path:
-        model = load_model(model_path)
+        model = load_model(args.model_path)
     else:
         model = get_model(args.version)
 
@@ -87,7 +86,7 @@ def main():
 
     for name in args.names:
         run_prediction(model, name, split_folder, args.version, args.splits, args.input)
-    
+
     print("Finished segmenting!")
 
 
