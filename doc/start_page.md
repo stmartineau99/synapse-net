@@ -147,10 +147,12 @@ For more options supported by the IMOD exports, please run `synapse_net.export_t
 
 > Note: to use these commands you have to install IMOD.
 
+SynapseNet also provides two CLI comamnds for training models, one for supervised network training (see [Supervised Training](#supervised-training) for details) and one for domain adaptation (see [Domain Adaptation](#domain-adaptation) for details).
+
 
 ## Python Library
 
-Using the `synapse_net` python library offers the most flexibility for using the SynapseNet functionality.
+Using the `synapse_net` python library offers the most flexibility for using SynapseNet's functionality.
 You can find an example analysis pipeline implemented with SynapseNet [here](https://github.com/computational-cell-analytics/synapse-net/blob/main/examples/analysis_pipeline.py).
 
 We offer different functionality for segmenting and analyzing synapses in electron microscopy:
@@ -161,17 +163,32 @@ We offer different functionality for segmenting and analyzing synapses in electr
 
 Please refer to the module documentation below for a full overview of our library's functionality.
 
+### Supervised Training
+
+SynapseNet provides functionality for training a UNet for segmentation tasks using supervised learning.
+In this case, you have to provide data **and** (manual) annotations for the structure(s) you want to segment.
+This functionality is implemented in `synapse_net.training.supervised_training`. You can find an example script that shows how to use it [here](https://github.com/computational-cell-analytics/synapse-net/blob/main/examples/network_training.py).
+
+We also provide a command line function to run supervised training: `synapse_net.run_supervised_training`. Run
+```bash
+synapse_net.run_supervised_training -h
+```
+for more information and instructions on how to use it.
+
 ### Domain Adaptation
 
-We provide functionality for domain adaptation. It implements a special form of neural network training that can improve segmentation for data from a different condition (e.g. different sample preparation, electron microscopy technique or different specimen), **without requiring additional annotated structures**.
+SynapseNet provides functionality for (unsupervised) domain adaptation.
+This functionality is implemented through a student-teacher training approach that can improve segmentation for data from a different condition (for example different sample preparation, imaging technique, or different specimen), **without requiring additional annotated structures**.
 Domain adaptation is implemented in `synapse_net.training.domain_adaptation`. You can find an example script that shows how to use it [here](https://github.com/computational-cell-analytics/synapse-net/blob/main/examples/domain_adaptation.py).
 
-> Note: Domain adaptation only works if the initial model you adapt already finds some of the structures in the data from a new condition. If it does not work you will have to train a network on annotated data.
+We also provide a command line function to run domain adaptation: `synapse_net.run_domain_adaptation`. Run
+```bash
+synapse_net.run_domain_adaptation -h
+```
+for more information and instructions on how to use it.
 
-### Network Training
+> Note: Domain adaptation only works if the initial model already finds some of the structures in the data from a new condition. If it does not work you will have to train a network on annotated data.
 
-We also provide functionality for 'regular' neural network training. In this case, you have to provide data **and** manual annotations for the structure(s) you want to segment.
-This functionality is implemented in `synapse_net.training.supervised_training`. You can find an example script that shows how to use it [here](https://github.com/computational-cell-analytics/synapse-net/blob/main/examples/network_training.py).
 
 ## Segmentation for the CryoET Data Portal
 

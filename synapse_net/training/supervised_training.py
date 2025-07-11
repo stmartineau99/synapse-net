@@ -306,8 +306,7 @@ def supervised_training(
     trainer.fit(n_iterations)
 
 
-def _parse_input_folder(folder, pattern, key):
-    files = sorted(glob(os.path.join(folder, "**", pattern), recursive=True))
+def _derive_key_from_files(files, key):
     # Get all file extensions (general wild-cards may pick up files with multiple extensions).
     extensions = list(set([os.path.splitext(ff)[1] for ff in files]))
 
@@ -325,7 +324,7 @@ def _parse_input_folder(folder, pattern, key):
     # If the key is None and can't be derived raise an error.
     elif key is None and ext not in extension_to_key:
         raise ValueError(
-            f"You have not passed a key for the data in {folder}, but the key could not be derived for{ext} format."
+            f"You have not passed a key for the data in {ext} format, for which the key cannot be derived."
         )
     # If the key was passed and doesn't match the extension raise an error.
     elif key is not None and ext in extension_to_key and key != extension_to_key[ext]:
@@ -333,6 +332,11 @@ def _parse_input_folder(folder, pattern, key):
             f"The expected key {extension_to_key[ext]} for format {ext} did not match the passed key {key}."
         )
     return files, key
+
+
+def _parse_input_folder(folder, pattern, key):
+    files = sorted(glob(os.path.join(folder, "**", pattern), recursive=True))
+    return _derive_key_from_files(files, key)
 
 
 def _parse_input_files(args):
@@ -366,7 +370,12 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Train a model for foreground and boundary segmentation via supervised learning."
+        description="Train a model for foreground and boundary segmentation via supervised learning.\n\n"
+        "You can use this function to train a model for vesicle segmentation, or another segmentation task, like this:\n"  # noqa
+        "synapse_net.run_supervised_training -n my_model -i /path/to/images -l /path/to/labels --patch_shape 32 192 192\n"  # noqa
+        "The trained model will be saved in the folder 'checkpoints/my_model' (or whichever name you pass to the '-n' argument)."  # noqa
+        "You can then use this model for segmentation with the SynapseNet GUI or CLI. "
+        "Check out the information below for details on the arguments of this function."
     )
     parser.add_argument("-n", "--name", required=True, help="The name of the model to be trained.")
     parser.add_argument("-p", "--patch_shape", nargs=3, type=int, help="The patch shape for training.")

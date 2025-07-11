@@ -12,7 +12,9 @@ from elf.io import open_file
 from sklearn.model_selection import train_test_split
 
 from .semisupervised_training import get_unsupervised_loader
-from .supervised_training import get_2d_model, get_3d_model, get_supervised_loader, _determine_ndim
+from .supervised_training import (
+    get_2d_model, get_3d_model, get_supervised_loader, _determine_ndim, _derive_key_from_files
+)
 from ..inference.inference import get_model_path, compute_scale_from_voxel_size
 from ..inference.util import _Scaler
 
@@ -166,12 +168,10 @@ PATCH_SHAPES = {
 """
 
 
-def _get_paths(input_folder, pattern, resize_training_data, model_name, tmp_dir):
+def _get_paths(input_folder, pattern, resize_training_data, model_name, tmp_dir, val_fraction):
     files = sorted(glob(os.path.join(input_folder, "**", pattern), recursive=True))
     if len(files) == 0:
         raise ValueError(f"Could not load any files from {input_folder} with pattern {pattern}")
-
-    val_fraction = 0.15
 
     # Heuristic: if we have less then 4 files then we crop a part of the volumes for validation.
     # And resave the volumes.
@@ -235,23 +235,50 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description=""
+        description="Adapt a model to data from a different domain using unsupervised domain adaptation.\n\n"
+        "You can use this function to adapt the SynapseNet model for vesicle segmentation like this:\n"
+        "synapse_net.run_domain_adaptation -n adapted_model -i /path/to/data --file_pattern *.mrc --source_model vesicles_3d\n"  # noqa
+        "The trained model will be saved in the folder 'checkpoints/adapted_model' (or whichever name you pass to the '-n' argument)."  # noqa
+        "You can then use this model for segmentation with the SynapseNet GUI or CLI. "
+        "Check out the information below for details on the arguments of this function."
     )
-    parser.add_argument("--name", "-n", required=True)
-    parser.add_argument("--input", "-i", required=True)
-    parser.add_argument("--pattern", "-p", default="*.mrc")
-    parser.add_argument("--source_model", default="vesicles_3d")
-    parser.add_argument("--resize_training_data", action="store_true")
-    parser.add_argument("--n_iterations", type=int, default=int(1e4))
-    parser.add_argument("--patch_shape", nargs="+", type=int)
+    parser.add_argument("--name", "-n", required=True, help="The name of the model to be trained. ")
+    parser.add_argument("--input_folder", "-i", required=True, help="The folder with the training data.")
+    parser.add_argument("--file_pattern", default="*",
+                        help="The pattern for selecting files for training. For example '*.mrc' to select mrc files.")
+    parser.add_argument("--key", help="The internal file path for the training data. Will be derived from the file extension by default.")  # noqa
+    parser.add_argument(
+        "--source_model",
+        default="vesicles_3d",
+        help="The source model used for weight initialization of teacher and student model. "
+        "By default the model 'vesicles_3d' for vesicle segmentation in volumetric data is used."
+    )
+    parser.add_argument(
+        "--resize_training_data", action="store_true",
+        help="Whether to resize the training data to fit the voxel size of the source model's trainign data."
+    )
+    parser.add_argument("--n_iterations", type=int, default=int(1e4), help="The number of iterations for training.")
+    parser.add_argument(
+        "--patch_shape", nargs=3, type=int,
+        help="The patch shape for training. By default the patch shape the source model was trained with is used."
+    )
+
+    # More optional argument:
+    parser.add_argument("--batch_size", type=int, default=1, help="The batch size for training.")
+    parser.add_argument("--n_samples_train", type=int, help="The number of samples per epoch for training. If not given will be derived from the data size.")  # noqa
+    parser.add_argument("--n_samples_val", type=int, help="The number of samples per epoch for validation. If not given will be derived from the data size.")  # noqa
+    parser.add_argument("--val_fraction", type=float, default=0.15, help="The fraction of the data to use for validation. This has no effect if 'val_folder' and 'val_label_folder' were passed.")  # noqa
+    parser.add_argument("--check", action="store_true", help="Visualize samples from the data loaders to ensure correct data instead of running training.")  # noqa
+
     args = parser.parse_args()
 
     source_checkpoint = get_model_path(args.source_model)
     patch_shape = _parse_patch_shape(args.patch_shape, args.source_model)
     with tempfile.TemporaryDirectory() as tmp_dir:
         unsupervised_train_paths, unsupervised_val_paths = _get_paths(
-            args.input, args.pattern, args.resize_training_data, args.source_model, tmp_dir
+            args.input, args.pattern, args.resize_training_data, args.source_model, tmp_dir, args.val_fraction,
         )
+        unsupervised_train_paths, raw_key = _derive_key_from_files(unsupervised_train_paths, args.key)
 
         mean_teacher_adaptation(
             name=args.name,
@@ -259,6 +286,10 @@ def main():
             unsupervised_val_paths=unsupervised_val_paths,
             patch_shape=patch_shape,
             source_checkpoint=source_checkpoint,
-            raw_key="data",
+            raw_key=raw_key,
             n_iterations=args.n_iterations,
+            batch_size=args.batch_size,
+            n_samples_train=args.n_samples_train,
+            n_samples_val=args.n_samples_val,
+            check=args.check,
         )
