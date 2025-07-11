@@ -196,3 +196,29 @@ We have published segmentation results for tomograms of synapses stored in the [
 - [CZCDP-10330](https://cryoetdataportal.czscience.com/depositions/10330): Contains synaptic vesicle segmentations for over 50 tomograms of synaptosomes. The segmentations were made with a model domain adapted to the synaptosome tomograms.
 
 The scripts for the submissions can be found in [scripts/cryo/cryo-et-portal](https://github.com/computational-cell-analytics/synapse-net/tree/main/scripts/cryo/cryo-et-portal).
+
+
+## Community Data Submission
+
+We are looking to extend and improve the SynapseNet models by training on more annotated data from electron tomography or (volume) electron microscopy.
+For this, we plan to collect data from community submissions.
+
+If you are using SynapseNet for a task where it does not perform well, or if you would like to use it for a new segmentation task not offered by it, and have annotations for your data, then you can submit this data to us, so that we can use it to train our next version of improved models.
+To do this, please create an [issue on github](https://github.com/computational-cell-analytics/synapse-net/issues) and:
+- Use a title "Data submission: ..." ("..." should be a title for your data, e.g. "smooth ER in electron tomography")
+- Briefly describe your data and add an image that shows the microscopy data and the segmentation masks you have.
+- Make sure to describe:
+    - The imaging modality and the structure(s) that you have segmented.
+    - How many images and annotations you have / can submit and how you have created the annotations.
+        - You should submit at least 5 images or crops and 20 annotated objects. If you are unsure if you have enough data please go ahead and create the issue / post and we can discuss the details.
+    - Which data-format your images and annotations are stored in. We recommend using either `tif`, `mrc`, or `ome.zarr` files.
+- Please indicate that you are willing to share the data for training purpose (see also next paragraph).
+
+Once you have created the post / issue, we will check if your data is suitable for submission or discuss with you how it could be extended to be suitable. Then:
+- We will share an agreement for data sharing. You can find **a draft** [here](https://docs.google.com/document/d/1vf5Efp5EJcS1ivuWM4f3pO5kBqEZfJcXucXL5ot0eqg/edit?usp=sharing).
+- You will be able to choose how you want to submit / publish your data.
+    - Share it under a CC0 license. In this case, we will use the data for re-training and also make it publicly available as soon as the next model versions become available.
+    - Share it for training with the option to publish it later. For example, if your data is unpublished and you want to only published once the respective publication is available. In this case, we will use the data for re-training, but not make it freely available yet. We will check with you peridiodically to see if your data can now be published.
+    - Share it for training only. In this case, we will re-train the model on it, but not make it publicly available.
+- We encourage you to choose the first option (making the data available under CC0).
+- We will then send you a link to upload your data, after you have agreed to these terms.

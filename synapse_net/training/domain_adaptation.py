@@ -240,7 +240,8 @@ def main():
         "synapse_net.run_domain_adaptation -n adapted_model -i /path/to/data --file_pattern *.mrc --source_model vesicles_3d\n"  # noqa
         "The trained model will be saved in the folder 'checkpoints/adapted_model' (or whichever name you pass to the '-n' argument)."  # noqa
         "You can then use this model for segmentation with the SynapseNet GUI or CLI. "
-        "Check out the information below for details on the arguments of this function."
+        "Check out the information below for details on the arguments of this function.",
+        formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument("--name", "-n", required=True, help="The name of the model to be trained. ")
     parser.add_argument("--input_folder", "-i", required=True, help="The folder with the training data.")

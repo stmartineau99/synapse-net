@@ -375,7 +375,8 @@ def main():
         "synapse_net.run_supervised_training -n my_model -i /path/to/images -l /path/to/labels --patch_shape 32 192 192\n"  # noqa
         "The trained model will be saved in the folder 'checkpoints/my_model' (or whichever name you pass to the '-n' argument)."  # noqa
         "You can then use this model for segmentation with the SynapseNet GUI or CLI. "
-        "Check out the information below for details on the arguments of this function."
+        "Check out the information below for details on the arguments of this function.",
+        formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument("-n", "--name", required=True, help="The name of the model to be trained.")
     parser.add_argument("-p", "--patch_shape", nargs=3, type=int, help="The patch shape for training.")
