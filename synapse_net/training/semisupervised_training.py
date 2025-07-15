@@ -1,11 +1,14 @@
 from typing import Optional, Tuple
 
 import numpy as np
+import uuid
+import h5py
 import torch
 import torch_em
 import torch_em.self_training as self_training
 from torchvision import transforms
 
+from synapse_net.file_utils import read_mrc
 from .supervised_training import get_2d_model, get_3d_model, get_supervised_loader, _determine_ndim
 
 
@@ -28,14 +31,36 @@ def weak_augmentations(p: float = 0.75) -> callable:
     ])
     return torch_em.transform.raw.get_raw_transform(normalizer=norm, augmentation1=aug)
 
+def drop_mask_channel(x):
+    x = x[:1]
+    return x
+    
+class ComposedTransform:
+    def __init__(self, *funcs):
+        self.funcs = funcs
 
+    def __call__(self, x):
+        for f in self.funcs:
+            x = f(x)
+        return x
+
+class ChannelSplitterSampler: 
+    def __init__(self, sampler):
+        self.sampler = sampler
+    
+    def __call__(self, x):
+        raw, mask = x[0], x[1]
+        return self.sampler(raw, mask)
+    
 def get_unsupervised_loader(
     data_paths: Tuple[str],
     raw_key: str,
     patch_shape: Tuple[int, int, int],
     batch_size: int,
     n_samples: Optional[int],
-    exclude_top_and_bottom: bool = False,
+    boundary_mask_paths: Optional[Tuple[str]] = None,
+    sampler: Optional[callable] = None,
+    exclude_top_and_bottom: bool = False,  # TODO this seems unneccesary if we have a boundary mask - remove? 
 ) -> torch.utils.data.DataLoader:
     """Get a dataloader for unsupervised segmentation training.
 
@@ -50,19 +75,46 @@ def get_unsupervised_loader(
             based on the patch_shape and size of the volumes used for training.
         exclude_top_and_bottom: Whether to exluce the five top and bottom slices to
             avoid artifacts at the border of tomograms.
+        boundary_mask_paths: The filepaths to the corresponding boundary masks for each tomogram.
+        sampler: Accept or reject patches based on a condition.
 
     Returns:
         The PyTorch dataloader.
     """
-
     # We exclude the top and bottom slices where the tomogram reconstruction is bad.
+    # TODO this seems unneccesary if we have a boundary mask - remove? 
     if exclude_top_and_bottom:
         roi = np.s_[5:-5, :, :]
     else:
         roi = None
+    # stack tomograms and masks and write to temp files to use as input to RawDataset()    
+    if boundary_mask_paths is not None:
+        assert len(data_paths) == len(boundary_mask_paths), \
+            f"Expected equal number of data_paths and and boundary_masks_paths, got {len(data_paths)} data paths and {len(boundary_mask_paths)} mask paths."
+        
+        stacked_paths = []
+        for i, (data_path, mask_path) in enumerate(zip(data_paths, boundary_mask_paths)):
+            raw = read_mrc(data_path)[0]
+            mask = read_mrc(mask_path)[0]
+            stacked = np.stack([raw, mask], axis=0)
+
+            tmp_path = f"/tmp/stacked{i}_{uuid.uuid4().hex}.h5"
+            with h5py.File(tmp_path, "w") as f:
+                f.create_dataset("raw", data=stacked, compression="gzip")
+            stacked_paths.append(tmp_path)
+
+        # update variables for RawDataset()
+        data_paths = tuple(stacked_paths)    
+        base_transform = torch_em.transform.get_raw_transform()
+        raw_transform = ComposedTransform(base_transform, drop_mask_channel)
+        sampler = ChannelSplitterSampler(sampler)
+        with_channels = True 
+    else:
+        raw_transform = torch_em.transform.get_raw_transform()
+        with_channels = False
+        sampler = None
 
     _, ndim = _determine_ndim(patch_shape)
-    raw_transform = torch_em.transform.get_raw_transform()
     transform = torch_em.transform.get_augmentations(ndim=ndim)
 
     if n_samples is None:
@@ -71,17 +123,18 @@ def get_unsupervised_loader(
         n_samples_per_ds = int(n_samples / len(data_paths))
 
     augmentations = (weak_augmentations(), weak_augmentations())
+
     datasets = [
-        torch_em.data.RawDataset(path, raw_key, patch_shape, raw_transform, transform,
-                                 augmentations=augmentations, roi=roi, ndim=ndim, n_samples=n_samples_per_ds)
+        torch_em.data.RawDataset(path, raw_key, patch_shape, raw_transform, transform, roi=roi,
+        n_samples=n_samples_per_ds, sampler=sampler, ndim=ndim, with_channels=with_channels, augmentations=augmentations)
         for path in data_paths
     ]
     ds = torch.utils.data.ConcatDataset(datasets)
 
     num_workers = 4 * batch_size
-    loader = torch_em.segmentation.get_data_loader(ds, batch_size=batch_size, num_workers=num_workers, shuffle=True)
+    loader = torch_em.segmentation.get_data_loader(ds, batch_size=batch_size,
+                                                   num_workers=num_workers, shuffle=True)
     return loader
-
 
 # TODO: use different paths for supervised and unsupervised training
 # (We are currently not using this functionality directly, so this is not a high priority)

@@ -18,7 +18,6 @@ from .supervised_training import (
 from ..inference.inference import get_model_path, compute_scale_from_voxel_size
 from ..inference.util import _Scaler
 
-
 def mean_teacher_adaptation(
     name: str,
     unsupervised_train_paths: Tuple[str],
@@ -37,7 +36,10 @@ def mean_teacher_adaptation(
     n_iterations: int = int(1e4),
     n_samples_train: Optional[int] = None,
     n_samples_val: Optional[int] = None,
+    train_mask_paths: Optional[Tuple[str]] = None,
+    val_mask_paths: Optional[Tuple[str]] = None,
     sampler: Optional[callable] = None,
+    device: int = 0,
 ) -> None:
     """Run domain adapation to transfer a network trained on a source domain for a supervised
     segmentation task to perform this task on a different target domain.
@@ -82,6 +84,10 @@ def mean_teacher_adaptation(
             based on the patch_shape and size of the volumes used for training.
         n_samples_val: The number of val samples per epoch. By default this will be estimated
             based on the patch_shape and size of the volumes used for validation.
+        train_mask_paths: Boundary masks used by the sampler to accept or reject patches for training. 
+        val_mask_paths: Boundary masks used by the sampler to accept or reject patches for     validation. 
+        sampler: Accept or reject patches based on a condition.
+        device: GPU ID for training.
     """
     assert (supervised_train_paths is None) == (supervised_val_paths is None)
     is_2d, _ = _determine_ndim(patch_shape)
@@ -113,10 +119,21 @@ def mean_teacher_adaptation(
     loss_and_metric = self_training.DefaultSelfTrainingLossAndMetric()
 
     unsupervised_train_loader = get_unsupervised_loader(
-        unsupervised_train_paths, raw_key, patch_shape, batch_size, n_samples=n_samples_train
+        data_paths=unsupervised_train_paths, 
+        raw_key=raw_key, 
+        patch_shape=patch_shape, 
+        batch_size=batch_size, 
+        n_samples=n_samples_train, 
+        boundary_mask_paths=train_mask_paths, 
+        sampler=sampler
     )
     unsupervised_val_loader = get_unsupervised_loader(
-        unsupervised_val_paths, raw_key, patch_shape, batch_size, n_samples=n_samples_val
+        data_paths=unsupervised_val_paths, 
+        raw_key=raw_key, 
+        patch_shape=patch_shape, 
+        batch_size=batch_size, 
+        n_samples=n_samples_val, 
+        boundary_mask_paths=val_mask_paths, sampler=sampler
     )
 
     if supervised_train_paths is not None:
@@ -133,7 +150,7 @@ def mean_teacher_adaptation(
         supervised_train_loader = None
         supervised_val_loader = None
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    device = torch.device(f"cuda:{device}") if torch.cuda.is_available() else torch.device("cpu")
     trainer = self_training.MeanTeacherTrainer(
         name=name,
         model=model,
@@ -155,7 +172,7 @@ def mean_teacher_adaptation(
         device=device,
         reinit_teacher=reinit_teacher,
         save_root=save_root,
-        sampler=sampler,
+        sampler=None, # TODO currently set to none cause I didn't want to pass the same sampler used by get_unsupervised_loader
     )
     trainer.fit(n_iterations)
 
