@@ -109,8 +109,7 @@ def get_model_training_resolution(model_type: str) -> Dict[str, float]:
         Mapping of axis (x, y, z) to the voxel size (in nm) of that axis.
     """
     resolutions = {
-        # TODO update the resolution of the active zone model
-        "active_zone": {"x": 1.44, "y": 1.44, "z": 1.44},
+        "active_zone": {"x": 1.38, "y": 1.38, "z": 1.38},
         "compartments": {"x": 3.47, "y": 3.47, "z": 3.47},
         "mitochondria": {"x": 2.07, "y": 2.07, "z": 2.07},
         "cristae": {"x": 1.44, "y": 1.44, "z": 1.44},
