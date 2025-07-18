@@ -51,16 +51,16 @@ class ChannelSplitterSampler:
     def __call__(self, x):
         raw, mask = x[0], x[1]
         return self.sampler(raw, mask)
-    
+
 def get_unsupervised_loader(
     data_paths: Tuple[str],
     raw_key: str,
     patch_shape: Tuple[int, int, int],
     batch_size: int,
     n_samples: Optional[int],
-    boundary_mask_paths: Optional[Tuple[str]] = None,
+    sample_mask_paths: Optional[Tuple[str]] = None,
     sampler: Optional[callable] = None,
-    exclude_top_and_bottom: bool = False,  # TODO this seems unneccesary if we have a boundary mask - remove? 
+    exclude_top_and_bottom: bool = False, 
 ) -> torch.utils.data.DataLoader:
     """Get a dataloader for unsupervised segmentation training.
 
@@ -75,7 +75,7 @@ def get_unsupervised_loader(
             based on the patch_shape and size of the volumes used for training.
         exclude_top_and_bottom: Whether to exluce the five top and bottom slices to
             avoid artifacts at the border of tomograms.
-        boundary_mask_paths: The filepaths to the corresponding boundary masks for each tomogram.
+        sample_mask_paths: The filepaths to the corresponding sample masks for each tomogram.
         sampler: Accept or reject patches based on a condition.
 
     Returns:
@@ -88,12 +88,12 @@ def get_unsupervised_loader(
     else:
         roi = None
     # stack tomograms and masks and write to temp files to use as input to RawDataset()    
-    if boundary_mask_paths is not None:
-        assert len(data_paths) == len(boundary_mask_paths), \
-            f"Expected equal number of data_paths and and boundary_masks_paths, got {len(data_paths)} data paths and {len(boundary_mask_paths)} mask paths."
+    if sample_mask_paths is not None:
+        assert len(data_paths) == len(sample_mask_paths), \
+            f"Expected equal number of data_paths and and sample_masks_paths, got {len(data_paths)} data paths and {len(sample_mask_paths)} mask paths."
         
         stacked_paths = []
-        for i, (data_path, mask_path) in enumerate(zip(data_paths, boundary_mask_paths)):
+        for i, (data_path, mask_path) in enumerate(zip(data_paths, sample_mask_paths)):
             raw = read_mrc(data_path)[0]
             mask = read_mrc(mask_path)[0]
             stacked = np.stack([raw, mask], axis=0)
@@ -135,6 +135,7 @@ def get_unsupervised_loader(
     loader = torch_em.segmentation.get_data_loader(ds, batch_size=batch_size,
                                                    num_workers=num_workers, shuffle=True)
     return loader
+
 
 # TODO: use different paths for supervised and unsupervised training
 # (We are currently not using this functionality directly, so this is not a high priority)

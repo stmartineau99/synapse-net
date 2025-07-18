@@ -1,22 +1,12 @@
 import os
-import tempfile
-from glob import glob
-from pathlib import Path
 from typing import Optional, Tuple
 
-import mrcfile
 import torch
 import torch_em
 import torch_em.self_training as self_training
-from elf.io import open_file
-from sklearn.model_selection import train_test_split
 
 from .semisupervised_training import get_unsupervised_loader
-from .supervised_training import (
-    get_2d_model, get_3d_model, get_supervised_loader, _determine_ndim, _derive_key_from_files
-)
-from ..inference.inference import get_model_path, compute_scale_from_voxel_size
-from ..inference.util import _Scaler
+from .supervised_training import get_2d_model, get_3d_model, get_supervised_loader, _determine_ndim
 
 def mean_teacher_adaptation(
     name: str,
@@ -38,10 +28,11 @@ def mean_teacher_adaptation(
     n_samples_val: Optional[int] = None,
     train_mask_paths: Optional[Tuple[str]] = None,
     val_mask_paths: Optional[Tuple[str]] = None,
-    sampler: Optional[callable] = None,
+    patch_sampler: Optional[callable] = None,
+    pseudo_label_sampler: Optional[callable] = None,
     device: int = 0,
 ) -> None:
-    """Run domain adapation to transfer a network trained on a source domain for a supervised
+    """Run domain adaptation to transfer a network trained on a source domain for a supervised
     segmentation task to perform this task on a different target domain.
 
     We support different domain adaptation settings:
@@ -84,10 +75,11 @@ def mean_teacher_adaptation(
             based on the patch_shape and size of the volumes used for training.
         n_samples_val: The number of val samples per epoch. By default this will be estimated
             based on the patch_shape and size of the volumes used for validation.
-        train_mask_paths: Boundary masks used by the sampler to accept or reject patches for training. 
-        val_mask_paths: Boundary masks used by the sampler to accept or reject patches for     validation. 
-        sampler: Accept or reject patches based on a condition.
-        device: GPU ID for training.
+        train_mask_paths: Boundary masks used by the patch sampler to accept or reject patches for training. 
+        val_mask_paths: Sample masks used by the patch sampler to accept or reject patches for validation. 
+        patch_sampler: Accept or reject patches based on a condition.
+        pseudo_label_sampler: Mask out regions of the pseudo labels where the teacher is not confident before updating the gradients. 
+        device: GPU ID for training. 
     """
     assert (supervised_train_paths is None) == (supervised_val_paths is None)
     is_2d, _ = _determine_ndim(patch_shape)
@@ -103,11 +95,11 @@ def mean_teacher_adaptation(
             model = get_3d_model(out_channels=2)
         reinit_teacher = True
     else:
-        print("Mean teacehr training initialized from source model:", source_checkpoint)
+        print("Mean teacher training initialized from source model:", source_checkpoint)
         if os.path.isdir(source_checkpoint):
             model = torch_em.util.load_model(source_checkpoint)
         else:
-            model = torch.load(source_checkpoint, weights_only=False)
+            model = torch.load(source_checkpoint)
         reinit_teacher = False
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
@@ -117,15 +109,15 @@ def mean_teacher_adaptation(
     pseudo_labeler = self_training.DefaultPseudoLabeler(confidence_threshold=confidence_threshold)
     loss = self_training.DefaultSelfTrainingLoss()
     loss_and_metric = self_training.DefaultSelfTrainingLossAndMetric()
-
+    
     unsupervised_train_loader = get_unsupervised_loader(
         data_paths=unsupervised_train_paths, 
         raw_key=raw_key, 
         patch_shape=patch_shape, 
         batch_size=batch_size, 
         n_samples=n_samples_train, 
-        boundary_mask_paths=train_mask_paths, 
-        sampler=sampler
+        sample_mask_paths=train_mask_paths, 
+        sampler=patch_sampler
     )
     unsupervised_val_loader = get_unsupervised_loader(
         data_paths=unsupervised_val_paths, 
@@ -133,7 +125,8 @@ def mean_teacher_adaptation(
         patch_shape=patch_shape, 
         batch_size=batch_size, 
         n_samples=n_samples_val, 
-        boundary_mask_paths=val_mask_paths, sampler=sampler
+        sample_mask_paths=val_mask_paths, 
+        sampler=patch_sampler
     )
 
     if supervised_train_paths is not None:
@@ -172,142 +165,6 @@ def mean_teacher_adaptation(
         device=device,
         reinit_teacher=reinit_teacher,
         save_root=save_root,
-        sampler=None, # TODO currently set to none cause I didn't want to pass the same sampler used by get_unsupervised_loader
+        sampler=pseudo_label_sampler,
     )
     trainer.fit(n_iterations)
-
-
-# TODO patch shapes for other models
-PATCH_SHAPES = {
-    "vesicles_3d": [48, 256, 256],
-}
-"""@private
-"""
-
-
-def _get_paths(input_folder, pattern, resize_training_data, model_name, tmp_dir, val_fraction):
-    files = sorted(glob(os.path.join(input_folder, "**", pattern), recursive=True))
-    if len(files) == 0:
-        raise ValueError(f"Could not load any files from {input_folder} with pattern {pattern}")
-
-    # Heuristic: if we have less then 4 files then we crop a part of the volumes for validation.
-    # And resave the volumes.
-    resave_val_crops = len(files) < 4
-
-    # We only resave the data if we resave val crops or resize the training data
-    resave_data = resave_val_crops or resize_training_data
-    if not resave_data:
-        train_paths, val_paths = train_test_split(files, test_size=val_fraction)
-        return train_paths, val_paths
-
-    train_paths, val_paths = [], []
-    for file_path in files:
-        file_name = os.path.basename(file_path)
-        data = open_file(file_path, mode="r")["data"][:]
-
-        if resize_training_data:
-            with mrcfile.open(file_path) as f:
-                voxel_size = f.voxel_size
-            voxel_size = {ax: vox_size / 10.0 for ax, vox_size in zip("xyz", voxel_size.item())}
-            scale = compute_scale_from_voxel_size(voxel_size, model_name)
-            scaler = _Scaler(scale, verbose=False)
-            data = scaler.sale_input(data)
-
-        if resave_val_crops:
-            n_slices = data.shape[0]
-            val_slice = int((1.0 - val_fraction) * n_slices)
-            train_data, val_data = data[:val_slice], data[val_slice:]
-
-            train_path = os.path.join(tmp_dir, Path(file_name).with_suffix(".h5")).replace(".h5", "_train.h5")
-            with open_file(train_path, mode="w") as f:
-                f.create_dataset("data", data=train_data, compression="lzf")
-            train_paths.append(train_path)
-
-            val_path = os.path.join(tmp_dir, Path(file_name).with_suffix(".h5")).replace(".h5", "_val.h5")
-            with open_file(val_path, mode="w") as f:
-                f.create_dataset("data", data=val_data, compression="lzf")
-            val_paths.append(val_path)
-
-        else:
-            output_path = os.path.join(tmp_dir, Path(file_name).with_suffix(".h5"))
-            with open_file(output_path, mode="w") as f:
-                f.create_dataset("data", data=data, compression="lzf")
-            train_paths.append(output_path)
-
-    if not resave_val_crops:
-        train_paths, val_paths = train_test_split(train_paths, test_size=val_fraction)
-
-    return train_paths, val_paths
-
-
-def _parse_patch_shape(patch_shape, model_name):
-    if patch_shape is None:
-        patch_shape = PATCH_SHAPES[model_name]
-    return patch_shape
-
-
-def main():
-    """@private
-    """
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Adapt a model to data from a different domain using unsupervised domain adaptation.\n\n"
-        "You can use this function to adapt the SynapseNet model for vesicle segmentation like this:\n"
-        "synapse_net.run_domain_adaptation -n adapted_model -i /path/to/data --file_pattern *.mrc --source_model vesicles_3d\n"  # noqa
-        "The trained model will be saved in the folder 'checkpoints/adapted_model' (or whichever name you pass to the '-n' argument)."  # noqa
-        "You can then use this model for segmentation with the SynapseNet GUI or CLI. "
-        "Check out the information below for details on the arguments of this function.",
-        formatter_class=argparse.RawTextHelpFormatter
-    )
-    parser.add_argument("--name", "-n", required=True, help="The name of the model to be trained. ")
-    parser.add_argument("--input_folder", "-i", required=True, help="The folder with the training data.")
-    parser.add_argument("--file_pattern", default="*",
-                        help="The pattern for selecting files for training. For example '*.mrc' to select mrc files.")
-    parser.add_argument("--key", help="The internal file path for the training data. Will be derived from the file extension by default.")  # noqa
-    parser.add_argument(
-        "--source_model",
-        default="vesicles_3d",
-        help="The source model used for weight initialization of teacher and student model. "
-        "By default the model 'vesicles_3d' for vesicle segmentation in volumetric data is used."
-    )
-    parser.add_argument(
-        "--resize_training_data", action="store_true",
-        help="Whether to resize the training data to fit the voxel size of the source model's trainign data."
-    )
-    parser.add_argument("--n_iterations", type=int, default=int(1e4), help="The number of iterations for training.")
-    parser.add_argument(
-        "--patch_shape", nargs=3, type=int,
-        help="The patch shape for training. By default the patch shape the source model was trained with is used."
-    )
-
-    # More optional argument:
-    parser.add_argument("--batch_size", type=int, default=1, help="The batch size for training.")
-    parser.add_argument("--n_samples_train", type=int, help="The number of samples per epoch for training. If not given will be derived from the data size.")  # noqa
-    parser.add_argument("--n_samples_val", type=int, help="The number of samples per epoch for validation. If not given will be derived from the data size.")  # noqa
-    parser.add_argument("--val_fraction", type=float, default=0.15, help="The fraction of the data to use for validation. This has no effect if 'val_folder' and 'val_label_folder' were passed.")  # noqa
-    parser.add_argument("--check", action="store_true", help="Visualize samples from the data loaders to ensure correct data instead of running training.")  # noqa
-
-    args = parser.parse_args()
-
-    source_checkpoint = get_model_path(args.source_model)
-    patch_shape = _parse_patch_shape(args.patch_shape, args.source_model)
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        unsupervised_train_paths, unsupervised_val_paths = _get_paths(
-            args.input, args.pattern, args.resize_training_data, args.source_model, tmp_dir, args.val_fraction,
-        )
-        unsupervised_train_paths, raw_key = _derive_key_from_files(unsupervised_train_paths, args.key)
-
-        mean_teacher_adaptation(
-            name=args.name,
-            unsupervised_train_paths=unsupervised_train_paths,
-            unsupervised_val_paths=unsupervised_val_paths,
-            patch_shape=patch_shape,
-            source_checkpoint=source_checkpoint,
-            raw_key=raw_key,
-            n_iterations=args.n_iterations,
-            batch_size=args.batch_size,
-            n_samples_train=args.n_samples_train,
-            n_samples_val=args.n_samples_val,
-            check=args.check,
-        )
