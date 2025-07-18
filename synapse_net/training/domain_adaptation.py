@@ -1,12 +1,22 @@
 import os
+import tempfile
+from glob import glob
+from pathlib import Path
 from typing import Optional, Tuple
 
+import mrcfile
 import torch
 import torch_em
 import torch_em.self_training as self_training
+from elf.io import open_file
+from sklearn.model_selection import train_test_split
 
 from .semisupervised_training import get_unsupervised_loader
-from .supervised_training import get_2d_model, get_3d_model, get_supervised_loader, _determine_ndim
+from .supervised_training import (
+    get_2d_model, get_3d_model, get_supervised_loader, _determine_ndim, _derive_key_from_files
+)
+from ..inference.inference import get_model_path, compute_scale_from_voxel_size
+from ..inference.util import _Scaler
 
 def mean_teacher_adaptation(
     name: str,
