@@ -85,7 +85,7 @@ def mean_teacher_adaptation(
             based on the patch_shape and size of the volumes used for training.
         n_samples_val: The number of val samples per epoch. By default this will be estimated
             based on the patch_shape and size of the volumes used for validation.
-        train_mask_paths: Boundary masks used by the patch sampler to accept or reject patches for training. 
+        train_mask_paths: Sample masks used by the patch sampler to accept or reject patches for training. 
         val_mask_paths: Sample masks used by the patch sampler to accept or reject patches for validation. 
         patch_sampler: Accept or reject patches based on a condition.
         pseudo_label_sampler: Mask out regions of the pseudo labels where the teacher is not confident before updating the gradients. 
