@@ -18,7 +18,6 @@ from .supervised_training import (
 from ..inference.inference import get_model_path, compute_scale_from_voxel_size
 from ..inference.util import _Scaler
 
-
 def mean_teacher_adaptation(
     name: str,
     unsupervised_train_paths: Tuple[str],
@@ -37,9 +36,13 @@ def mean_teacher_adaptation(
     n_iterations: int = int(1e4),
     n_samples_train: Optional[int] = None,
     n_samples_val: Optional[int] = None,
-    sampler: Optional[callable] = None,
+    train_mask_paths: Optional[Tuple[str]] = None,
+    val_mask_paths: Optional[Tuple[str]] = None,
+    patch_sampler: Optional[callable] = None,
+    pseudo_label_sampler: Optional[callable] = None,
+    device: int = 0,
 ) -> None:
-    """Run domain adapation to transfer a network trained on a source domain for a supervised
+    """Run domain adaptation to transfer a network trained on a source domain for a supervised
     segmentation task to perform this task on a different target domain.
 
     We support different domain adaptation settings:
@@ -82,6 +85,11 @@ def mean_teacher_adaptation(
             based on the patch_shape and size of the volumes used for training.
         n_samples_val: The number of val samples per epoch. By default this will be estimated
             based on the patch_shape and size of the volumes used for validation.
+        train_mask_paths: Sample masks used by the patch sampler to accept or reject patches for training. 
+        val_mask_paths: Sample masks used by the patch sampler to accept or reject patches for validation. 
+        patch_sampler: Accept or reject patches based on a condition.
+        pseudo_label_sampler: Mask out regions of the pseudo labels where the teacher is not confident before updating the gradients. 
+        device: GPU ID for training. 
     """
     assert (supervised_train_paths is None) == (supervised_val_paths is None)
     is_2d, _ = _determine_ndim(patch_shape)
@@ -97,7 +105,7 @@ def mean_teacher_adaptation(
             model = get_3d_model(out_channels=2)
         reinit_teacher = True
     else:
-        print("Mean teacehr training initialized from source model:", source_checkpoint)
+        print("Mean teacher training initialized from source model:", source_checkpoint)
         if os.path.isdir(source_checkpoint):
             model = torch_em.util.load_model(source_checkpoint)
         else:
@@ -111,12 +119,24 @@ def mean_teacher_adaptation(
     pseudo_labeler = self_training.DefaultPseudoLabeler(confidence_threshold=confidence_threshold)
     loss = self_training.DefaultSelfTrainingLoss()
     loss_and_metric = self_training.DefaultSelfTrainingLossAndMetric()
-
+    
     unsupervised_train_loader = get_unsupervised_loader(
-        unsupervised_train_paths, raw_key, patch_shape, batch_size, n_samples=n_samples_train
+        data_paths=unsupervised_train_paths, 
+        raw_key=raw_key, 
+        patch_shape=patch_shape, 
+        batch_size=batch_size, 
+        n_samples=n_samples_train, 
+        sample_mask_paths=train_mask_paths, 
+        sampler=patch_sampler
     )
     unsupervised_val_loader = get_unsupervised_loader(
-        unsupervised_val_paths, raw_key, patch_shape, batch_size, n_samples=n_samples_val
+        data_paths=unsupervised_val_paths, 
+        raw_key=raw_key, 
+        patch_shape=patch_shape, 
+        batch_size=batch_size, 
+        n_samples=n_samples_val, 
+        sample_mask_paths=val_mask_paths, 
+        sampler=patch_sampler
     )
 
     if supervised_train_paths is not None:
@@ -133,7 +153,7 @@ def mean_teacher_adaptation(
         supervised_train_loader = None
         supervised_val_loader = None
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    device = torch.device(f"cuda:{device}") if torch.cuda.is_available() else torch.device("cpu")
     trainer = self_training.MeanTeacherTrainer(
         name=name,
         model=model,
@@ -155,11 +175,11 @@ def mean_teacher_adaptation(
         device=device,
         reinit_teacher=reinit_teacher,
         save_root=save_root,
-        sampler=sampler,
+        sampler=pseudo_label_sampler,
     )
     trainer.fit(n_iterations)
-
-
+    
+    
 # TODO patch shapes for other models
 PATCH_SHAPES = {
     "vesicles_3d": [48, 256, 256],
@@ -227,7 +247,6 @@ def _parse_patch_shape(patch_shape, model_name):
     if patch_shape is None:
         patch_shape = PATCH_SHAPES[model_name]
     return patch_shape
-
 
 def main():
     """@private
