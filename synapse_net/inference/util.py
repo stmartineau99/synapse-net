@@ -18,6 +18,7 @@ import torch_em
 # import xarray
 
 from elf.io import open_file
+from numpy.typing import ArrayLike
 from scipy.ndimage import binary_closing
 from skimage.measure import regionprops
 from skimage.morphology import remove_small_holes
@@ -99,16 +100,32 @@ class _Scaler:
         return output
 
 
+def _preprocess(input_volume, with_channels, channels_to_standardize):
+    # We standardize the data for the whole volume beforehand.
+    # If we have channels then the standardization is done independently per channel.
+    if with_channels:
+        input_volume = input_volume.astype(np.float32, copy=False)
+        # TODO Check that this is the correct axis.
+        if channels_to_standardize is None:  # assume all channels
+            channels_to_standardize = range(input_volume.shape[0])
+        for ch in channels_to_standardize:
+            input_volume[ch] = torch_em.transform.raw.standardize(input_volume[ch])
+    else:
+        input_volume = torch_em.transform.raw.standardize(input_volume)
+    return input_volume
+
+
 def get_prediction(
-    input_volume: np.ndarray,  # [z, y, x]
+    input_volume: ArrayLike,  # [z, y, x]
     tiling: Optional[Dict[str, Dict[str, int]]],  # {"tile": {"z": int, ...}, "halo": {"z": int, ...}}
     model_path: Optional[str] = None,
     model: Optional[torch.nn.Module] = None,
     verbose: bool = True,
     with_channels: bool = False,
     channels_to_standardize: Optional[List[int]] = None,
-    mask: Optional[np.ndarray] = None,
-) -> np.ndarray:
+    mask: Optional[ArrayLike] = None,
+    prediction: Optional[ArrayLike] = None,
+) -> ArrayLike:
     """Run prediction on a given volume.
 
     This function will automatically choose the correct prediction implementation,
@@ -124,6 +141,8 @@ def get_prediction(
         channels_to_standardize: List of channels to standardize. Defaults to None.
         mask: Optional binary mask. If given, the prediction will only be run in
             the foreground region of the mask.
+        prediction: An array like object for writing the prediction.
+            If not given, the prediction will be computed in moemory.
 
     Returns:
         The predicted volume.
@@ -140,17 +159,11 @@ def get_prediction(
     if tiling is None:
         tiling = get_default_tiling()
 
-    # We standardize the data for the whole volume beforehand.
-    # If we have channels then the standardization is done independently per channel.
-    if with_channels:
-        input_volume = input_volume.astype(np.float32, copy=False)
-        # TODO Check that this is the correct axis.
-        if channels_to_standardize is None:  # assume all channels
-            channels_to_standardize = range(input_volume.shape[0])
-        for ch in channels_to_standardize:
-            input_volume[ch] = torch_em.transform.raw.standardize(input_volume[ch])
-    else:
-        input_volume = torch_em.transform.raw.standardize(input_volume)
+    # Normalize the whole input volume if it is a numpy array.
+    # Otherwise we have a zarr array or similar as input, and can't normalize it en-block.
+    # Normalization will be applied later per block in this case.
+    if isinstance(input_volume, np.ndarray):
+        input_volume = _preprocess(input_volume, with_channels, channels_to_standardize)
 
     # Run prediction with the bioimage.io library.
     if is_bioimageio:
@@ -174,21 +187,23 @@ def get_prediction(
         for dim in tiling["tile"]:
             updated_tiling["tile"][dim] = tiling["tile"][dim] - 2 * tiling["halo"][dim]
         # print(f"updated_tiling {updated_tiling}")
-        pred = get_prediction_torch_em(
-            input_volume, updated_tiling, model_path, model, verbose, with_channels, mask=mask
+        prediction = get_prediction_torch_em(
+            input_volume, updated_tiling, model_path, model, verbose, with_channels,
+            mask=mask, prediction=prediction,
         )
 
-    return pred
+    return prediction
 
 
 def get_prediction_torch_em(
-    input_volume: np.ndarray,  # [z, y, x]
+    input_volume: ArrayLike,  # [z, y, x]
     tiling: Dict[str, Dict[str, int]],  # {"tile": {"z": int, ...}, "halo": {"z": int, ...}}
     model_path: Optional[str] = None,
     model: Optional[torch.nn.Module] = None,
     verbose: bool = True,
     with_channels: bool = False,
-    mask: Optional[np.ndarray] = None,
+    mask: Optional[ArrayLike] = None,
+    prediction: Optional[ArrayLike] = None,
 ) -> np.ndarray:
     """Run prediction using torch-em on a given volume.
 
@@ -201,6 +216,8 @@ def get_prediction_torch_em(
         with_channels: Whether to predict with channels.
         mask: Optional binary mask. If given, the prediction will only be run in
             the foreground region of the mask.
+        prediction: An array like object for writing the prediction.
+            If not given, the prediction will be computed in moemory.
 
     Returns:
         The predicted volume.
@@ -234,14 +251,16 @@ def get_prediction_torch_em(
                 print("Run prediction with mask.")
             mask = mask.astype("bool")
 
-        pred = predict_with_halo(
+        preprocess = None if isinstance(input_volume, np.ndarray) else torch_em.transform.raw.standardize
+        prediction = predict_with_halo(
             input_volume, model, gpu_ids=[device],
             block_shape=block_shape, halo=halo,
-            preprocess=None, with_channels=with_channels, mask=mask,
+            preprocess=preprocess, with_channels=with_channels, mask=mask,
+            output=prediction,
         )
     if verbose:
         print("Prediction time in", time.time() - t0, "s")
-    return pred
+    return prediction
 
 
 def _get_file_paths(input_path, ext=".mrc"):
@@ -325,6 +344,7 @@ def inference_helper(
     output_key: Optional[str] = None,
     model_resolution: Optional[Tuple[float, float, float]] = None,
     scale: Optional[Tuple[float, float, float]] = None,
+    allocate_output: bool = False,
 ) -> None:
     """Helper function to run segmentation for mrc files.
 
@@ -347,6 +367,7 @@ def inference_helper(
         model_resolution: The resolution / voxel size to which the inputs should be scaled for prediction.
             If given, the scaling factor will automatically be determined based on the voxel_size of the input data.
         scale: Fixed factor for scaling the model inputs. Cannot be passed together with 'model_resolution'.
+        allocate_output: Whether to allocate the output for the segmentation function.
     """
     if (scale is not None) and (model_resolution is not None):
         raise ValueError("You must not provide both 'scale' and 'model_resolution' arguments.")
@@ -412,7 +433,11 @@ def inference_helper(
             this_scale = _derive_scale(img_path, model_resolution)
 
         # Run the segmentation.
-        segmentation = segmentation_function(input_volume, mask=mask, scale=this_scale)
+        if allocate_output:
+            segmentation = np.zeros(input_volume.shape, dtype="uint32")
+            segmentation_function(input_volume, output=segmentation, mask=mask, scale=this_scale)
+        else:
+            segmentation = segmentation_function(input_volume, mask=mask, scale=this_scale)
 
         # Write the result to tif or h5.
         os.makedirs(os.path.split(output_path)[0], exist_ok=True)

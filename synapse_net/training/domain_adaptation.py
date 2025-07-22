@@ -18,6 +18,7 @@ from .supervised_training import (
 from ..inference.inference import get_model_path, compute_scale_from_voxel_size
 from ..inference.util import _Scaler
 
+<<<<<<< HEAD
 class NewPseudoLabeler(self_training.DefaultPseudoLabeler):
     """Compute pseudo labels based on model predictions, typically from a teacher model.
         By default, assumes that the first channel contains the transformed data and the second channel contains the background mask. # TODO update description
@@ -94,6 +95,8 @@ class NewPseudoLabeler(self_training.DefaultPseudoLabeler):
         return pseudo_labels, label_mask
 
 
+=======
+>>>>>>> 9c252ed35b26397634947e7bec01ccb222751af6
 def mean_teacher_adaptation(
     name: str,
     unsupervised_train_paths: Tuple[str],
@@ -112,9 +115,14 @@ def mean_teacher_adaptation(
     n_iterations: int = int(1e4),
     n_samples_train: Optional[int] = None,
     n_samples_val: Optional[int] = None,
+<<<<<<< HEAD
     train_sample_mask_paths: Optional[Tuple[str]] = None,
     val_sample_mask_paths: Optional[Tuple[str]] = None,
     train_background_mask_paths: Optional[Tuple[str]] = None,
+=======
+    train_mask_paths: Optional[Tuple[str]] = None,
+    val_mask_paths: Optional[Tuple[str]] = None,
+>>>>>>> 9c252ed35b26397634947e7bec01ccb222751af6
     patch_sampler: Optional[callable] = None,
     pseudo_label_sampler: Optional[callable] = None,
     device: int = 0,
@@ -162,11 +170,18 @@ def mean_teacher_adaptation(
             based on the patch_shape and size of the volumes used for training.
         n_samples_val: The number of val samples per epoch. By default this will be estimated
             based on the patch_shape and size of the volumes used for validation.
+<<<<<<< HEAD
         train_sample_mask_paths: Boundary masks used by the patch sampler to accept or reject patches for training. 
         val_sample_mask_paths: Sample masks used by the patch sampler to accept or reject patches for validation. 
         train_background_mask_paths: # TODO add description
         patch_sampler: A sampler for rejecting patches based on a defined conditon. 
         pseudo_label_sampler: A sampler for rejecting pseudo-labels based on a defined condition.
+=======
+        train_mask_paths: Sample masks used by the patch sampler to accept or reject patches for training. 
+        val_mask_paths: Sample masks used by the patch sampler to accept or reject patches for validation. 
+        patch_sampler: Accept or reject patches based on a condition.
+        pseudo_label_sampler: Mask out regions of the pseudo labels where the teacher is not confident before updating the gradients. 
+>>>>>>> 9c252ed35b26397634947e7bec01ccb222751af6
         device: GPU ID for training. 
     """
     assert (supervised_train_paths is None) == (supervised_val_paths is None)
@@ -201,15 +216,23 @@ def mean_teacher_adaptation(
 
     loss = self_training.DefaultSelfTrainingLoss()
     loss_and_metric = self_training.DefaultSelfTrainingLossAndMetric()
+<<<<<<< HEAD
    
+=======
+    
+>>>>>>> 9c252ed35b26397634947e7bec01ccb222751af6
     unsupervised_train_loader = get_unsupervised_loader(
         data_paths=unsupervised_train_paths, 
         raw_key=raw_key, 
         patch_shape=patch_shape, 
         batch_size=batch_size, 
         n_samples=n_samples_train, 
+<<<<<<< HEAD
         sample_mask_paths=train_sample_mask_paths, 
         background_mask_paths=train_background_mask_paths,
+=======
+        sample_mask_paths=train_mask_paths, 
+>>>>>>> 9c252ed35b26397634947e7bec01ccb222751af6
         sampler=patch_sampler
     )
     unsupervised_val_loader = get_unsupervised_loader(
@@ -218,8 +241,12 @@ def mean_teacher_adaptation(
         patch_shape=patch_shape, 
         batch_size=batch_size, 
         n_samples=n_samples_val, 
+<<<<<<< HEAD
         sample_mask_paths=val_sample_mask_paths, 
         background_mask_paths=None,
+=======
+        sample_mask_paths=val_mask_paths, 
+>>>>>>> 9c252ed35b26397634947e7bec01ccb222751af6
         sampler=patch_sampler
     )
 
@@ -262,7 +289,12 @@ def mean_teacher_adaptation(
         sampler=pseudo_label_sampler,
     )
     trainer.fit(n_iterations)
+<<<<<<< HEAD
 
+=======
+    
+    
+>>>>>>> 9c252ed35b26397634947e7bec01ccb222751af6
 # TODO patch shapes for other models
 PATCH_SHAPES = {
     "vesicles_3d": [48, 256, 256],
