@@ -30,7 +30,6 @@ def weak_augmentations(p: float = 0.75) -> callable:
     ])
     return torch_em.transform.raw.get_raw_transform(normalizer=norm, augmentation1=aug)
 
-<<<<<<< HEAD
 class DropChannel:
     def __init__(self, channel: int):
         self.channel = channel
@@ -59,12 +58,6 @@ class ChannelWiseRawTransform:
         output[self.transform_channel] = self.base_transform(data[self.transform_channel])
         return output
 
-=======
-def drop_mask_channel(x):
-    x = x[:1]
-    return x
-    
->>>>>>> 9c252ed35b26397634947e7bec01ccb222751af6
 class ComposedTransform:
     def __init__(self, *funcs):
         self.funcs = funcs
@@ -74,7 +67,6 @@ class ComposedTransform:
             x = f(x)
         return x
 
-<<<<<<< HEAD
 class ChannelWiseAugmentations:
     def __init__(self, base_augmentations: callable, transform_channel: int = 0):
         self.base_augmentations = base_augmentations
@@ -91,17 +83,13 @@ class ChannelWiseAugmentations:
         output[self.transform_channel] = self.base_augmentations(data[self.transform_channel])
         return output
 
-class ChannelSplitterSampler:
-=======
 class ChannelSplitterSampler: 
->>>>>>> 9c252ed35b26397634947e7bec01ccb222751af6
     def __init__(self, sampler):
         self.sampler = sampler
     
     def __call__(self, x):
         raw, mask = x[0], x[1]
         return self.sampler(raw, mask)
-<<<<<<< HEAD
 
 def get_stacked_path(inputs: List[np.ndarray]):
     stacked = np.stack(inputs, axis=0)
@@ -109,22 +97,15 @@ def get_stacked_path(inputs: List[np.ndarray]):
     with h5py.File(tmp_path, "w") as f:
         f.create_dataset("raw", data=stacked, compression="gzip")
     return tmp_path
-=======
->>>>>>> 9c252ed35b26397634947e7bec01ccb222751af6
 
 def get_unsupervised_loader(
     data_paths: Tuple[str],
     raw_key: str,
     patch_shape: Tuple[int, int, int],
     batch_size: int,
-<<<<<<< HEAD
     n_samples: Optional[int] = None,
     sample_mask_paths: Optional[Tuple[str]] = None,
     background_mask_paths: Tuple[str] = None,
-=======
-    n_samples: Optional[int],
-    sample_mask_paths: Optional[Tuple[str]] = None,
->>>>>>> 9c252ed35b26397634947e7bec01ccb222751af6
     sampler: Optional[callable] = None,
     exclude_top_and_bottom: bool = False, 
 ) -> torch.utils.data.DataLoader:
@@ -142,10 +123,7 @@ def get_unsupervised_loader(
         exclude_top_and_bottom: Whether to exluce the five top and bottom slices to
             avoid artifacts at the border of tomograms.
         sample_mask_paths: The filepaths to the corresponding sample masks for each tomogram.
-<<<<<<< HEAD
         background_mask_paths: TODO add description
-=======
->>>>>>> 9c252ed35b26397634947e7bec01ccb222751af6
         sampler: Accept or reject patches based on a condition.
 
     Returns:
@@ -157,40 +135,11 @@ def get_unsupervised_loader(
         roi = np.s_[5:-5, :, :]
     else:
         roi = None
-<<<<<<< HEAD
     
     # initialize class instances
     base_transform = torch_em.transform.get_raw_transform()
     channelwise_raw_transform = ChannelWiseRawTransform(base_transform)
     drop_channel = DropChannel(channel = 1)
-=======
-    # stack tomograms and masks and write to temp files to use as input to RawDataset()    
-    if sample_mask_paths is not None:
-        assert len(data_paths) == len(sample_mask_paths), \
-            f"Expected equal number of data_paths and and sample_masks_paths, got {len(data_paths)} data paths and {len(sample_mask_paths)} mask paths."
-        
-        stacked_paths = []
-        for i, (data_path, mask_path) in enumerate(zip(data_paths, sample_mask_paths)):
-            raw = read_mrc(data_path)[0]
-            mask = read_mrc(mask_path)[0]
-            stacked = np.stack([raw, mask], axis=0)
-
-            tmp_path = f"/tmp/stacked{i}_{uuid.uuid4().hex}.h5"
-            with h5py.File(tmp_path, "w") as f:
-                f.create_dataset("raw", data=stacked, compression="gzip")
-            stacked_paths.append(tmp_path)
-
-        # update variables for RawDataset()
-        data_paths = tuple(stacked_paths)    
-        base_transform = torch_em.transform.get_raw_transform()
-        raw_transform = ComposedTransform(base_transform, drop_mask_channel)
-        sampler = ChannelSplitterSampler(sampler)
-        with_channels = True 
-    else:
-        raw_transform = torch_em.transform.get_raw_transform()
-        with_channels = False
-        sampler = None
->>>>>>> 9c252ed35b26397634947e7bec01ccb222751af6
 
     # get configurations
     has_sample_mask = sample_mask_paths is not None
@@ -256,11 +205,6 @@ def get_unsupervised_loader(
     else:
         n_samples_per_ds = int(n_samples / len(data_paths))
 
-<<<<<<< HEAD
-=======
-    augmentations = (weak_augmentations(), weak_augmentations())
-
->>>>>>> 9c252ed35b26397634947e7bec01ccb222751af6
     datasets = [
         torch_em.data.RawDataset(path, raw_key, patch_shape, raw_transform, transform, roi=roi,
         n_samples=n_samples_per_ds, sampler=sampler, ndim=ndim, with_channels=with_channels, augmentations=augmentations)
