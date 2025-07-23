@@ -2,12 +2,14 @@ import os
 import tempfile
 from glob import glob
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Callable
+import time
 
 import mrcfile
 import torch
 import torch_em
 import torch_em.self_training as self_training
+from torch_em.self_training.logger import SelfTrainingTensorboardLogger
 from elf.io import open_file
 from sklearn.model_selection import train_test_split
 
@@ -19,8 +21,8 @@ from ..inference.inference import get_model_path, compute_scale_from_voxel_size
 from ..inference.util import _Scaler
 
 class NewPseudoLabeler(self_training.DefaultPseudoLabeler):
-    """Compute pseudo labels based on model predictions, typically from a teacher model.
-        By default, assumes that the first channel contains the transformed data and the second channel contains the background mask. # TODO update description
+    """Subclass of DefaultPseudoLabeler, which can subtract background from the pseudo labels if a background mask is provided.
+        By default, assumes that the first channel contains the transformed raw data and the second channel contains the background mask.
 
     Args:
         activation: Activation function applied to the teacher prediction.
@@ -32,8 +34,8 @@ class NewPseudoLabeler(self_training.DefaultPseudoLabeler):
         confidence_mask_channel: A specific channel to use for computing the confidence mask.
             By default the confidence mask is computed across all channels independently.
             This is useful, if only one of the channels encodes a probability.
-        raw_channel: # TODO add description
-        background_mask_channel: # TODO add description
+        raw_channel: Channel index of the raw data, which will be used as input to the teacher model
+        background_mask_channel: Channel index of the background mask, which will be subtracted from the pseudo labels.
     """
     def __init__(
         self,
@@ -41,14 +43,14 @@ class NewPseudoLabeler(self_training.DefaultPseudoLabeler):
         confidence_threshold: Optional[float] = None,
         threshold_from_both_sides: bool = True,
         confidence_mask_channel: Optional[int] = None,
-        raw_channel: Optional[int] = 0, 
+        raw_channel: Optional[int] = 0,
         background_mask_channel: Optional[int] = 1,
     ):
         super().__init__(activation, confidence_threshold, threshold_from_both_sides)
+        self.confidence_mask_channel = confidence_mask_channel
         self.raw_channel = raw_channel
         self.background_mask_channel = background_mask_channel
-        self.confidence_mask_channel = confidence_mask_channel
-    
+        
     def _subtract_background(self, pseudo_labels: torch.Tensor, background_mask: torch.Tensor):
         bool_mask = background_mask.bool()
         return pseudo_labels.masked_fill(bool_mask, 0)
@@ -63,10 +65,12 @@ class NewPseudoLabeler(self_training.DefaultPseudoLabeler):
         Returns:
             The pseudo-labels.
         """
-        if self.background_mask_channel is not None:
-            if input_.ndim != 5:
-                raise ValueError(f"Expect data with 5 dimensions (B, C, D, H, W), got shape {input_.shape}.") 
-    
+        if input_.ndim != 5:
+            raise ValueError(f"Expect data with 5 dimensions (B, C, D, H, W), got shape {input_.shape}.")
+        
+        has_background_mask = input_.shape[1] > 1 
+
+        if has_background_mask:
             if self.background_mask_channel > input_.shape[1]:
                 raise ValueError(f"Channel index {self.background_mask_channel} is out of bounds for shape {input_.shape}.")
 
@@ -88,10 +92,111 @@ class NewPseudoLabeler(self_training.DefaultPseudoLabeler):
                 size = (pseudo_labels.shape[0], pseudo_labels.shape[1], *([-1] * (pseudo_labels.ndim - 2)))
                 label_mask = label_mask.expand(*size)
         
-        if self.background_mask_channel is not None:  
+        if has_background_mask:
             pseudo_labels = self._subtract_background(pseudo_labels, background_mask)
 
         return pseudo_labels, label_mask
+
+class NewMeanTeacherTrainer(self_training.MeanTeacherTrainer):
+    """Subclass of MeanTeacherTrainer, updated to handle cases where the background mask is provided. 
+    Once the pseudo labels are computed, the second channel of the teacher input is dropped, if it exists.
+    The second channel of the student input is also dropped, if it exists, since it is not needed for training.
+
+    Args:
+        activation: Activation function applied to the teacher prediction.
+        confidence_threshold: Threshold for computing a mask for filtering the pseudo labels.
+            If None is given no mask will be computed.
+        threshold_from_both_sides: Whether to include both values bigger than the threshold
+            and smaller than 1 - the thrhesold, or only values bigger than the threshold, in the mask.
+            The former should be used for binary labels, the latter for for multiclass labels.
+        confidence_mask_channel: A specific channel to use for computing the confidence mask.
+            By default the confidence mask is computed across all channels independently.
+            This is useful, if only one of the channels encodes a probability.
+        raw_channel: Channel index of the raw data to be used as input to the teacher model.
+        background_mask_channel: Channel index of the background mask, which will be subtracted from the pseudo labels.
+    """
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        unsupervised_train_loader: torch.utils.data.DataLoader,
+        unsupervised_loss: Callable,
+        pseudo_labeler: Callable,
+        supervised_train_loader: Optional[torch.utils.data.DataLoader] = None,
+        unsupervised_val_loader: Optional[torch.utils.data.DataLoader] = None,
+        supervised_val_loader: Optional[torch.utils.data.DataLoader] = None,
+        supervised_loss: Optional[Callable] = None,
+        unsupervised_loss_and_metric: Optional[Callable] = None,
+        supervised_loss_and_metric: Optional[Callable] = None,
+        logger=SelfTrainingTensorboardLogger,
+        momentum: float = 0.999,
+        reinit_teacher: Optional[bool] = None,
+        sampler: Optional[Callable] = None,
+        **kwargs,
+    ):
+        super().__init__(model, unsupervised_train_loader, unsupervised_loss, pseudo_labeler,
+                         supervised_train_loader, unsupervised_val_loader, supervised_val_loader,
+                         supervised_loss, unsupervised_loss_and_metric, supervised_loss_and_metric,
+                         logger, momentum, reinit_teacher, sampler, **kwargs)
+
+    def _train_epoch_unsupervised(self, progress, forward_context, backprop):
+        self.model.train()
+
+        n_iter = 0
+        t_per_iter = time.time()
+
+        # Sample from both the supervised and unsupervised loader.
+        for xu1, xu2 in self.unsupervised_train_loader:
+            
+            # Assuming shape (B, C, D, H, W), only keep the first channel for xu2 (student input).
+            if xu2.shape[1] > 1:
+                xu2 = xu2[:, :1].contiguous()
+
+            xu1, xu2 = xu1.to(self.device, non_blocking=True), xu2.to(self.device, non_blocking=True)
+
+            teacher_input, model_input = xu1, xu2
+            
+            with forward_context(), torch.no_grad():
+                # Compute the pseudo labels.
+                pseudo_labels, label_filter = self.pseudo_labeler(self.teacher, teacher_input)
+
+            # Drop the second channel for xu1 (teacher input) after computing the pseudo labels.
+            if xu1.shape[1] > 1:
+                xu1 = xu1[:, :1].contiguous()
+
+            # If we have a sampler then check if the current batch matches the condition for inclusion in training.
+            if self.sampler is not None:
+                keep_batch = self.sampler(pseudo_labels, label_filter)
+                if not keep_batch:
+                    continue
+
+            self.optimizer.zero_grad()
+            # Perform unsupervised training
+            with forward_context():
+                loss = self.unsupervised_loss(self.model, model_input, pseudo_labels, label_filter)
+            backprop(loss)
+
+            if self.logger is not None:
+                with torch.no_grad(), forward_context():
+                    pred = self.model(model_input) if self._iteration % self.log_image_interval == 0 else None
+                self.logger.log_train_unsupervised(
+                    self._iteration, loss, xu1, xu2, pred, pseudo_labels, label_filter
+                )
+                lr = [pm["lr"] for pm in self.optimizer.param_groups][0]
+                self.logger.log_lr(self._iteration, lr)
+                if self.pseudo_labeler.confidence_threshold is not None:
+                    self.logger.log_ct(self._iteration, self.pseudo_labeler.confidence_threshold)
+
+            with torch.no_grad():
+                self._momentum_update()
+
+            self._iteration += 1
+            n_iter += 1
+            if self._iteration >= self.max_iteration:
+                break
+            progress.update(1)
+
+        t_per_iter = (time.time() - t_per_iter) / n_iter
+        return t_per_iter
 
 def mean_teacher_adaptation(
     name: str,
@@ -114,13 +219,11 @@ def mean_teacher_adaptation(
     train_sample_mask_paths: Optional[Tuple[str]] = None,
     val_sample_mask_paths: Optional[Tuple[str]] = None,
     train_background_mask_paths: Optional[Tuple[str]] = None,
-    train_mask_paths: Optional[Tuple[str]] = None,
-    val_mask_paths: Optional[Tuple[str]] = None,
     patch_sampler: Optional[callable] = None,
     pseudo_label_sampler: Optional[callable] = None,
     device: int = 0,
 ) -> None:
-    """Run domain adaptation to transfer a network trained on a source domain for a supervised
+    """Run domain adapation to transfer a network trained on a source domain for a supervised
     segmentation task to perform this task on a different target domain.
 
     We support different domain adaptation settings:
@@ -163,15 +266,14 @@ def mean_teacher_adaptation(
             based on the patch_shape and size of the volumes used for training.
         n_samples_val: The number of val samples per epoch. By default this will be estimated
             based on the patch_shape and size of the volumes used for validation.
-        train_sample_mask_paths: Boundary masks used by the patch sampler to accept or reject patches for training. 
-        val_sample_mask_paths: Sample masks used by the patch sampler to accept or reject patches for validation. 
-        train_background_mask_paths: # TODO add description
+        train_sample_mask_paths: Filepaths to the sample masks used by the patch sampler to accept or reject 
+            patches for training.
+        val_sample_mask_paths: Filepaths to the sample masks used by the patch sampler to accept or reject 
+            patches for validation. 
+        train_background_mask_paths: Filepaths to the background masks used for training.
+            Background masks are used to subtract background from the pseudo labels before the forward pass. 
         patch_sampler: A sampler for rejecting patches based on a defined conditon. 
         pseudo_label_sampler: A sampler for rejecting pseudo-labels based on a defined condition.
-        train_mask_paths: Sample masks used by the patch sampler to accept or reject patches for training. 
-        val_mask_paths: Sample masks used by the patch sampler to accept or reject patches for validation. 
-        patch_sampler: Accept or reject patches based on a condition.
-        pseudo_label_sampler: Mask out regions of the pseudo labels where the teacher is not confident before updating the gradients. 
         device: GPU ID for training. 
     """
     assert (supervised_train_paths is None) == (supervised_val_paths is None)
@@ -192,7 +294,7 @@ def mean_teacher_adaptation(
         if os.path.isdir(source_checkpoint):
             model = torch_em.util.load_model(source_checkpoint)
         else:
-            model = torch.load(source_checkpoint, weights_only=False)
+            model = torch.load(source_checkpoint)
         reinit_teacher = False
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
@@ -206,7 +308,7 @@ def mean_teacher_adaptation(
 
     loss = self_training.DefaultSelfTrainingLoss()
     loss_and_metric = self_training.DefaultSelfTrainingLossAndMetric()
-
+   
     unsupervised_train_loader = get_unsupervised_loader(
         data_paths=unsupervised_train_paths, 
         raw_key=raw_key, 
@@ -215,7 +317,6 @@ def mean_teacher_adaptation(
         n_samples=n_samples_train, 
         sample_mask_paths=train_sample_mask_paths, 
         background_mask_paths=train_background_mask_paths,
-        sample_mask_paths=train_mask_paths, 
         sampler=patch_sampler
     )
     unsupervised_val_loader = get_unsupervised_loader(
@@ -226,7 +327,6 @@ def mean_teacher_adaptation(
         n_samples=n_samples_val, 
         sample_mask_paths=val_sample_mask_paths, 
         background_mask_paths=None,
-        sample_mask_paths=val_mask_paths, 
         sampler=patch_sampler
     )
 
