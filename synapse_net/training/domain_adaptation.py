@@ -20,33 +20,26 @@ from .supervised_training import (
 from ..inference.inference import get_model_path, compute_scale_from_voxel_size
 from ..inference.util import _Scaler
 
-class NewPseudoLabeler(self_training.DefaultPseudoLabeler):
+class PseudoLabelerWithBackgroundMask(self_training.DefaultPseudoLabeler):
     """Subclass of DefaultPseudoLabeler, which can subtract background from the pseudo labels if a background mask is provided.
         By default, assumes that the first channel contains the transformed raw data and the second channel contains the background mask.
 
     Args:
-        activation: Activation function applied to the teacher prediction.
-        confidence_threshold: Threshold for computing a mask for filtering the pseudo labels.
-            If None is given no mask will be computed.
-        threshold_from_both_sides: Whether to include both values bigger than the threshold
-            and smaller than 1 - the thrhesold, or only values bigger than the threshold, in the mask.
-            The former should be used for binary labels, the latter for for multiclass labels.
         confidence_mask_channel: A specific channel to use for computing the confidence mask.
             By default the confidence mask is computed across all channels independently.
             This is useful, if only one of the channels encodes a probability.
         raw_channel: Channel index of the raw data, which will be used as input to the teacher model
         background_mask_channel: Channel index of the background mask, which will be subtracted from the pseudo labels.
+        kwargs: Additional keyword arguments for `self_training.DefaultPseudoLabeler`.
     """
     def __init__(
         self,
-        activation: Optional[torch.nn.Module] = None,
-        confidence_threshold: Optional[float] = None,
-        threshold_from_both_sides: bool = True,
         confidence_mask_channel: Optional[int] = None,
         raw_channel: Optional[int] = 0,
         background_mask_channel: Optional[int] = 1,
+        **kwargs
     ):
-        super().__init__(activation, confidence_threshold, threshold_from_both_sides)
+        super().__init__(**kwargs)
         self.confidence_mask_channel = confidence_mask_channel
         self.raw_channel = raw_channel
         self.background_mask_channel = background_mask_channel
@@ -97,46 +90,16 @@ class NewPseudoLabeler(self_training.DefaultPseudoLabeler):
 
         return pseudo_labels, label_mask
 
-class NewMeanTeacherTrainer(self_training.MeanTeacherTrainer):
+class MeanTeacherTrainerWithBackgroundMask(self_training.MeanTeacherTrainer):
     """Subclass of MeanTeacherTrainer, updated to handle cases where the background mask is provided. 
     Once the pseudo labels are computed, the second channel of the teacher input is dropped, if it exists.
     The second channel of the student input is also dropped, if it exists, since it is not needed for training.
 
     Args:
-        activation: Activation function applied to the teacher prediction.
-        confidence_threshold: Threshold for computing a mask for filtering the pseudo labels.
-            If None is given no mask will be computed.
-        threshold_from_both_sides: Whether to include both values bigger than the threshold
-            and smaller than 1 - the thrhesold, or only values bigger than the threshold, in the mask.
-            The former should be used for binary labels, the latter for for multiclass labels.
-        confidence_mask_channel: A specific channel to use for computing the confidence mask.
-            By default the confidence mask is computed across all channels independently.
-            This is useful, if only one of the channels encodes a probability.
-        raw_channel: Channel index of the raw data to be used as input to the teacher model.
-        background_mask_channel: Channel index of the background mask, which will be subtracted from the pseudo labels.
+        kwargs: Additional keyword arguments for `self_training.MeanTeacherTrainer`.
     """
-    def __init__(
-        self,
-        model: torch.nn.Module,
-        unsupervised_train_loader: torch.utils.data.DataLoader,
-        unsupervised_loss: Callable,
-        pseudo_labeler: Callable,
-        supervised_train_loader: Optional[torch.utils.data.DataLoader] = None,
-        unsupervised_val_loader: Optional[torch.utils.data.DataLoader] = None,
-        supervised_val_loader: Optional[torch.utils.data.DataLoader] = None,
-        supervised_loss: Optional[Callable] = None,
-        unsupervised_loss_and_metric: Optional[Callable] = None,
-        supervised_loss_and_metric: Optional[Callable] = None,
-        logger=SelfTrainingTensorboardLogger,
-        momentum: float = 0.999,
-        reinit_teacher: Optional[bool] = None,
-        sampler: Optional[Callable] = None,
-        **kwargs,
-    ):
-        super().__init__(model, unsupervised_train_loader, unsupervised_loss, pseudo_labeler,
-                         supervised_train_loader, unsupervised_val_loader, supervised_val_loader,
-                         supervised_loss, unsupervised_loss_and_metric, supervised_loss_and_metric,
-                         logger, momentum, reinit_teacher, sampler, **kwargs)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def _train_epoch_unsupervised(self, progress, forward_context, backprop):
         self.model.train()
@@ -294,7 +257,7 @@ def mean_teacher_adaptation(
         if os.path.isdir(source_checkpoint):
             model = torch_em.util.load_model(source_checkpoint)
         else:
-            model = torch.load(source_checkpoint)
+            model = torch.load(source_checkpoint, weights_only=False)
         reinit_teacher = False
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
@@ -302,9 +265,11 @@ def mean_teacher_adaptation(
 
     # self training functionality
     if train_background_mask_paths is not None:
-        pseudo_labeler = NewPseudoLabeler(confidence_threshold=confidence_threshold, background_mask_channel=1)
+        pseudo_labeler = PseudoLabelerWithBackgroundMask(confidence_threshold=confidence_threshold, background_mask_channel=1)
+        trainer_class = MeanTeacherTrainerWithBackgroundMask
     else:
         pseudo_labeler = self_training.DefaultPseudoLabeler(confidence_threshold=confidence_threshold)
+        trainer_class = self_training.MeanTeacherTrainer
 
     loss = self_training.DefaultSelfTrainingLoss()
     loss_and_metric = self_training.DefaultSelfTrainingLossAndMetric()
@@ -345,7 +310,7 @@ def mean_teacher_adaptation(
         supervised_val_loader = None
 
     device = torch.device(f"cuda:{device}") if torch.cuda.is_available() else torch.device("cpu")
-    trainer = self_training.MeanTeacherTrainer(
+    trainer = trainer_class(
         name=name,
         model=model,
         optimizer=optimizer,
