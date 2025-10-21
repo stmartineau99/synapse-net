@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 import numpy as np
 import uuid
@@ -98,6 +98,7 @@ def get_stacked_path(inputs: List[np.ndarray]):
         f.create_dataset("raw", data=stacked, compression="gzip")
     return tmp_path
 
+# TODO rewrite to work with h5 files, currently only works for mrcfiles
 def get_unsupervised_loader(
     data_paths: Tuple[str],
     raw_key: str,
@@ -112,7 +113,7 @@ def get_unsupervised_loader(
     """Get a dataloader for unsupervised segmentation training.
 
     Args:
-        data_paths: The filepaths to the hdf5 files containing the training data.
+        data_paths: The filepaths to the mrc files containing the training data.
         raw_key: The key that holds the raw data inside of the hdf5.
         patch_shape: The patch shape used for a training example.
             In order to run 2d training pass a patch shape with a singleton in the z-axis,
@@ -122,15 +123,14 @@ def get_unsupervised_loader(
             based on the patch_shape and size of the volumes used for training.
         exclude_top_and_bottom: Whether to exluce the five top and bottom slices to
             avoid artifacts at the border of tomograms.
-        sample_mask_paths: The filepaths to the corresponding sample masks for each tomogram.
-        background_mask_paths: TODO add description
+        sample_mask_paths: The mrc filepaths to the corresponding sample masks for each tomogram.
+        background_mask_paths: The mrc filepaths to the corresponding background masks for each tomogram.
         sampler: Accept or reject patches based on a condition.
 
     Returns:
         The PyTorch dataloader.
     """
     # We exclude the top and bottom slices where the tomogram reconstruction is bad.
-    # TODO this seems unneccesary if we have a boundary mask - remove? 
     if exclude_top_and_bottom:
         roi = np.s_[5:-5, :, :]
     else:
