@@ -10,6 +10,7 @@ from torchvision import transforms
 
 from synapse_net.file_utils import read_mrc
 from .supervised_training import get_2d_model, get_3d_model, get_supervised_loader, _determine_ndim
+from pathlib import Path
 
 def weak_augmentations(p: float = 0.75) -> callable:
     """The weak augmentations used in the unsupervised data loader.
@@ -67,17 +68,19 @@ class ComposedTransform:
             x = f(x)
         return x
 
+# fix this to avoid serialization issues
 class ChannelWiseAugmentations:
-    def __init__(self, base_augmentations: callable, transform_channel: int = 0):
-        self.base_augmentations = base_augmentations
+    def __init__(self, transform_channel: int = 0, base_augmentations: Optional[callable] = None):
         self.transform_channel = transform_channel
-    
+        if base_augmentations is None:
+            self.base_augmentations = weak_augmentations()
+
     def __call__(self, data):
         if data.ndim != 4:
             raise ValueError("Expect data with 4 dimensions (C, D, H, W).") 
 
         if self.transform_channel > data.shape[0]:
-            raise ValueError(f"Augmentations channel index {self.transform_channel} is out of bounds for shape {data.shape}.")
+            raise ValueError(f"Augmentations channel index {self.transform_channel} is out of bounds for shape {data.shape}.")   
 
         output = data.clone() 
         output[self.transform_channel] = self.base_augmentations(data[self.transform_channel])
@@ -90,15 +93,22 @@ class ChannelSplitterSampler:
     def __call__(self, x):
         raw, mask = x[0], x[1]
         return self.sampler(raw, mask)
-
+    
 def get_stacked_path(inputs: List[np.ndarray]):
+    """Helper function to get_unsupervised_loader(). In cases where a mask input is given, creates a temporary 
+     h5 file containing the stacked inputs (raw, sample_mask, background mask) to be used to RawDataset().
+
+    Args:
+        inputs: List of numpy arrays to be stacked along axis 0.
+
+    Returns: Path to temporary h5 file containing stacked inputs.
+    """
     stacked = np.stack(inputs, axis=0)
     tmp_path = f"/tmp/stacked_{uuid.uuid4().hex}.h5"
     with h5py.File(tmp_path, "w") as f:
         f.create_dataset("raw", data=stacked, compression="gzip")
     return tmp_path
 
-# TODO rewrite to work with h5 files, currently only works for mrcfiles
 def get_unsupervised_loader(
     data_paths: Tuple[str],
     raw_key: str,
@@ -113,7 +123,7 @@ def get_unsupervised_loader(
     """Get a dataloader for unsupervised segmentation training.
 
     Args:
-        data_paths: The filepaths to the mrc files containing the training data.
+        data_paths: The filepaths to the hdf5 or mrc files containing the training data.
         raw_key: The key that holds the raw data inside of the hdf5.
         patch_shape: The patch shape used for a training example.
             In order to run 2d training pass a patch shape with a singleton in the z-axis,
@@ -155,16 +165,21 @@ def get_unsupervised_loader(
             and {len(background_mask_paths)} background mask paths."
     
         for i, (data_path, sample_mask_path, background_mask_path) in enumerate(zip(data_paths, sample_mask_paths, background_mask_paths)):
-            raw = read_mrc(data_path)[0]
+            if Path(data_path).suffix == ".h5":
+                with h5py.File(data_path, "r") as f:
+                    raw = f[raw_key][:]
+            else:
+                raw = read_mrc(data_path)[0]
             sample_mask = read_mrc(sample_mask_path)[0]
             background_mask = read_mrc(background_mask_path)[0]
+
             stacked_path = get_stacked_path([raw, sample_mask, background_mask])
             stacked_paths.append(stacked_path)
 
         # update variables for RawDataset()
         data_paths = tuple(stacked_paths)    
         raw_transform = ComposedTransform(channelwise_raw_transform, drop_channel)
-        augmentations = (ChannelWiseAugmentations(weak_augmentations()), ChannelWiseAugmentations(weak_augmentations()))
+        augmentations = (ChannelWiseAugmentations(), ChannelWiseAugmentations())
         sampler = ChannelSplitterSampler(sampler)
         with_channels = True 
 
@@ -174,8 +189,13 @@ def get_unsupervised_loader(
         f"Expected equal number of paths, got {len(data_paths)} data paths and {len(sample_mask_paths)} sample mask paths."
 
         for i, (data_path, sample_mask_path) in enumerate(zip(data_paths, sample_mask_paths)):
-            raw = read_mrc(data_path)[0]
+            if Path(data_path).suffix == ".h5":
+                with h5py.File(data_path, "r") as f:
+                    raw = f[raw_key][:]
+            else:
+                raw = read_mrc(data_path)[0]
             sample_mask = read_mrc(sample_mask_path)[0]
+
             stacked_path = get_stacked_path([raw, sample_mask])
             stacked_paths.append(stacked_path)
 
@@ -188,11 +208,33 @@ def get_unsupervised_loader(
 
     # Case 3: only background masks are provided 
     elif has_background_mask:
-        raise NotImplementedError("Background mask only input-handling not implemented.")
+        # TODO test case 3
+        assert len(data_paths) == len(background_mask_paths), \
+        f"Expected equal number of paths, got {len(data_paths)} data paths and {len(background_mask_paths)} background mask paths."
+
+        for i, (data_path, background_mask_path) in enumerate(zip(data_paths, background_mask_paths)):
+            if Path(data_path).suffix == ".h5":
+                with h5py.File(data_path, "r") as f:
+                    raw = f[raw_key][:]
+            else:
+                raw = read_mrc(data_path)[0]
+            background_mask = read_mrc(background_mask_path)[0]
+
+            stacked_path = get_stacked_path([raw, background_mask])
+            stacked_paths.append(stacked_path)
+
+        # update variables for RawDataset()
+        data_paths = tuple(stacked_paths)    
+        raw_transform = base_transform
+        augmentations = (ChannelWiseAugmentations(), ChannelWiseAugmentations())
+        sampler = None
+        with_channels = True 
 
     # Case 4: neither mask is present, use default behavior
     else:
-        raw_transform = torch_em.transform.get_raw_transform()
+        if Path(data_paths[0]).suffix != ".h5":
+            raise ValueError("Input filepaths must point to hdf5 files if sample masks and/or background masks are not provided.")
+        raw_transform = base_transform
         augmentations = (weak_augmentations(), weak_augmentations())
         sampler = None
         with_channels = False
@@ -239,7 +281,7 @@ def semisupervised_training(
     Args:
         name: The name for the checkpoint to be trained.
         train_paths: Filepaths to the hdf5 files for the training data.
-        val_paths: Filepaths to the df5 files for the validation data.
+        val_paths: Filepaths to the hdf5 files for the validation data.
         label_key: The key that holds the labels inside of the hdf5.
         patch_shape: The patch shape used for a training example.
             In order to run 2d training pass a patch shape with a singleton in the z-axis,

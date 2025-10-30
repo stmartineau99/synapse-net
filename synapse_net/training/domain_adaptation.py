@@ -110,7 +110,9 @@ class MeanTeacherTrainerWithBackgroundMask(self_training.MeanTeacherTrainer):
         # Sample from both the supervised and unsupervised loader.
         for xu1, xu2 in self.unsupervised_train_loader:
             
-            # Assuming shape (B, C, D, H, W), only keep the first channel for xu2 (student input).
+            # Keep only the first channel for xu2 (student input).
+            if xu2.ndim != 5:
+                raise ValueError(f"Expect xu2 to have 5 dimensions (B, C, D, H, W), got shape {xu2.shape}.")
             if xu2.shape[1] > 1:
                 xu2 = xu2[:, :1].contiguous()
 
@@ -123,6 +125,8 @@ class MeanTeacherTrainerWithBackgroundMask(self_training.MeanTeacherTrainer):
                 pseudo_labels, label_filter = self.pseudo_labeler(self.teacher, teacher_input)
 
             # Drop the second channel for xu1 (teacher input) after computing the pseudo labels.
+            if xu1.ndim != 5:
+                raise ValueError(f"Expect xu1 to have 5 dimensions (B, C, D, H, W), got shape {xu1.shape}.")
             if xu1.shape[1] > 1:
                 xu1 = xu1[:, :1].contiguous()
 
@@ -184,7 +188,7 @@ def mean_teacher_adaptation(
     train_background_mask_paths: Optional[Tuple[str]] = None,
     patch_sampler: Optional[callable] = None,
     pseudo_label_sampler: Optional[callable] = None,
-    device: int = 0,
+    device: Optional[torch.device] = None,
 ) -> None:
     """Run domain adapation to transfer a network trained on a source domain for a supervised
     segmentation task to perform this task on a different target domain.
@@ -197,11 +201,9 @@ def mean_teacher_adaptation(
 
     Args:
         name: The name for the checkpoint to be trained.
-        unsupervsied_train_paths: Filepaths to the hdf5 files or similar file formats
-            for the training data in the target domain.
+        unsupervsied_train_paths: Filepaths to the hdf5 or mrc files for the training data in the target domain.
             This training data is used for unsupervised learning, so it does not require labels.
-        unsupervised_val_paths: Filepaths to the hdf5 files or similar file formats
-            for the validation data in the target domain.
+        unsupervised_val_paths: Filepaths to the hdf5 or mrc files for the validation data in the target domain.
             This validation data is used for unsupervised learning, so it does not require labels.
         patch_shape: The patch shape used for a training example.
             In order to run 2d training pass a patch shape with a singleton in the z-axis,
@@ -231,9 +233,9 @@ def mean_teacher_adaptation(
             based on the patch_shape and size of the volumes used for validation.
         train_sample_mask_paths: Filepaths to the sample masks used by the patch sampler to accept or reject 
             patches for training.
-        val_sample_mask_paths: Filepaths to the sample masks used by the patch sampler to accept or reject 
+        val_sample_mask_paths: Filepaths to the sample masks mrc files used by the patch sampler to accept or reject 
             patches for validation. 
-        train_background_mask_paths: Filepaths to the background masks used for training.
+        train_background_mask_paths: Filepaths to the background masks mrc files used for training.
             Background masks are used to subtract background from the pseudo labels before the forward pass. 
         patch_sampler: A sampler for rejecting patches based on a defined conditon. 
         pseudo_label_sampler: A sampler for rejecting pseudo-labels based on a defined condition.
